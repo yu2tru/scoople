@@ -34,6 +34,12 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   background:var(--ink);color:#fff;padding:5px 10px;border-radius:999px;white-space:nowrap;opacity:0;transition:opacity .3s;will-change:transform}
 .tag.show{opacity:1}
 .tag.guess{background:#fff;color:var(--ink);box-shadow:0 2px 0 rgba(0,0,0,.08)}
+#scoopTag{display:flex;align-items:center;gap:5px;z-index:5}
+#scoopTag svg{width:12px;height:12px;display:none}
+#scoopTag.click{pointer-events:auto;cursor:pointer}
+#scoopTag.click svg{display:block}
+#scoopTag.click::after{content:"";position:absolute;inset:-10px -8px}
+#scoopTag.click:active{transform-origin:center}
 
 #app{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(480px,100%);
   display:flex;flex-direction:column;pointer-events:none;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
@@ -160,7 +166,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 <body>
 <canvas id="c" aria-label="3D scene"></canvas>
 <svg id="lines"><line id="scoopLine" stroke="#1d1a19" stroke-width="1.5" stroke-linecap="round" opacity="0"/><circle id="scoopDot" r="3" fill="#1d1a19" opacity="0"/></svg>
-<div id="scoopTag" class="tag">1 scoop</div>
+<div id="scoopTag" class="tag" role="button" aria-label="Zoom in on the scoop">1 scoop<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/></svg></div>
 <div id="guessTag" class="tag guess">your guess</div>
 
 <div id="app">
@@ -889,14 +895,16 @@ function makeFill(spec, answer, objSize, rng) {
     return fill;
   }
 
-  // ---- medium & huge: clipped solid + lumpy packed-scoop surface + falling stream ----
+  // ---- medium & huge: clipped solid + heaped packed-scoop surface + falling stream ----
+  // The surface is a few soft mounds under drifting pour spots, raised and lowered around
+  // the true fill level so the volume always matches; they flatten out exactly at "full".
   const sp = Math.max(SCOOP_R * 2 * .85, Math.sqrt(maxA / LUMP_CAP)), lr = sp * .72;
   const solidGeo = worldUV(spec.solid.clone(), sp * 7);
   const solid = new THREE.Mesh(solidGeo, fillMat); solid.receiveShadow = true; group.add(solid);
   const cands = [], testYs = [0, .25, .5, .75, 1].map(f => lerp(b.y0 + 1e-3, b.y1 - 1e-3, f));
   for (let z = b.minZ + sp * .4, row = 0; z <= b.maxZ; z += sp * .866, row++) for (let x = b.minX + (row % 2 ? sp * .5 : 0) + sp * .3; x <= b.maxX; x += sp) {
     const jx = x + (rng() - .5) * sp * .25, jz = z + (rng() - .5) * sp * .25;
-    if (testYs.some(y => inside(jx, jz, y))) cands.push({ x: jx, z: jz, jy: (rng() - .5) * lr * .3, s: .82 + rng() * .3 });
+    if (testYs.some(y => inside(jx, jz, y))) cands.push({ x: jx, z: jz, jy: (rng() - .5) * lr * .3, s: .82 + rng() * .3, top: inside(jx, jz, b.y1 - 1e-3) });
   }
   while (cands.length > LUMP_CAP * 1.3) cands.splice(rng() * cands.length | 0, 1);
   const lumps = new THREE.InstancedMesh(SCOOP_LUMP, scoopMat, Math.max(1, cands.length));
@@ -904,38 +912,45 @@ function makeFill(spec, answer, objSize, rng) {
   cands.forEach((c, i) => lumps.setColorAt(i, col.set(FLAVORS[pickFlavor(rng)])));
   const lumpRot = cands.map(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng() * 6.28, (rng() - .5) * .5)));
   group.add(lumps);
-  const ins = lr * .35;
-  const setLevel = level => {
-    fillPlane.constant = level;
-    const show = level > b.y0 + lr * .15;
+
+  const huge = mode === 'huge', H = b.y1 - b.y0, side = Math.sqrt(maxA);
+  const nPour = huge ? 3 : clamp(Math.round(side / (objSize * .2)), 1, 3);
+  const pours = Array.from({ length: nPour }, () => { const [x, z] = randInside(b.y1 - 1e-3); return { x, z, tx: x, tz: z, wait: 0 }; });
+  const sig2 = 2 * (side * (nPour > 1 ? .26 : .34)) ** 2, ampMax = Math.min(H * .45, side * .2);
+  const mound = (x, z) => { let m = 0; for (const p of pours) m += Math.exp(-((x - p.x) ** 2 + (z - p.z) ** 2) / sig2); return Math.min(1, m); };
+  let amp = 0, meanM = 0;
+  const surfaceAt = (x, z, level) => level + amp * (mound(x, z) - meanM);
+  const ins = lr * .35, mvals = new Float32Array(cands.length);
+  const setLevel = (level, a) => {
+    amp = a; let sum = 0, n = 0;
+    for (let i = 0; i < cands.length; i++) { const m = mound(cands[i].x, cands[i].z); mvals[i] = m; if (cands[i].top) { sum += m; n++; } }
+    meanM = n ? sum / n : 0;
+    fillPlane.constant = Math.max(b.y0, level - amp * meanM);
     for (let i = 0; i < cands.length; i++) {
-      const c = cands[i], y = Math.min(level, b.y1) - lr * .05;
-      const ok = show && inside(c.x, c.z, y) && inside(c.x + ins, c.z, y) && inside(c.x - ins, c.z, y) && inside(c.x, c.z + ins, y) && inside(c.x, c.z - ins, y);
-      dummy.position.set(c.x, level - lr * .3 + c.jy, c.z); dummy.quaternion.copy(lumpRot[i]); dummy.scale.setScalar(ok ? lr * c.s : 0);
+      const c = cands[i], y = Math.min(level + amp * (mvals[i] - meanM), b.y1), ty = y - lr * .05;
+      const ok = y > b.y0 + lr * .15 && inside(c.x, c.z, ty) && inside(c.x + ins, c.z, ty) && inside(c.x - ins, c.z, ty) && inside(c.x, c.z + ins, ty) && inside(c.x, c.z - ins, ty);
+      dummy.position.set(c.x, y - lr * .3 + c.jy, c.z); dummy.quaternion.copy(lumpRot[i]); dummy.scale.setScalar(ok ? lr * c.s : 0);
       dummy.updateMatrix(); lumps.setMatrixAt(i, dummy.matrix);
     }
     lumps.instanceMatrix.needsUpdate = true;
   };
-  setLevel(b.y0);
+  setLevel(b.y0, 0);
 
-  const huge = mode === 'huge', S = huge ? (isMobile ? 700 : 1100) : 260;
+  const S = huge ? (isMobile ? 700 : 1100) : 260;
   const br = huge ? objSize * .005 : Math.max(SCOOP_R, objSize * .006);
   const balls = new THREE.InstancedMesh(SCOOP_LOW, scoopMat, S); balls.frustumCulled = false;
   for (let i = 0; i < S; i++) balls.setColorAt(i, col.set(FLAVORS[pickFlavor(rng)]));
   group.add(balls);
-  const spawnY = b.y1 + (b.y1 - b.y0) * .5 + objSize * .18, fallT = huge ? .6 : .55, grav = 2 * (spawnY - b.y0) / (fallT * fallT);
+  const spawnY = b.y1 + H * .5 + objSize * .18, fallT = huge ? .6 : .55, grav = 2 * (spawnY - b.y0) / (fallT * fallT);
   const P = new Float32Array(S * 4); for (let i = 0; i < S; i++) P[i * 4 + 1] = -1e9; // x, y, z, vy
-  const nPour = huge ? 0 : clamp(Math.round(Math.sqrt(maxA) / (objSize * .2)), 1, 3);
-  const pours = Array.from({ length: nPour }, () => { const [x, z] = randInside(b.y1 - 1e-3); return { x, z, tx: x, tz: z, wait: 0 }; });
-  const spread = Math.sqrt(maxA) * .07;
+  const spread = side * (huge ? .16 : .07);
   let spawnAcc = 0, next = 0, pouring = false, plopT = 0;
   const spawn = i => {
-    let x, z;
-    if (pours.length) { const p = pours[i % pours.length]; let ok = false;
-      for (let k = 0; k < 4 && !ok; k++) { x = p.x + (rng() + rng() - 1) * spread; z = p.z + (rng() + rng() - 1) * spread; ok = inside(x, z, b.y1 - 1e-3); }
-      if (!ok) [x, z] = randInside(b.y1 - 1e-3); }
-    else [x, z] = randInside(b.y1 - 1e-3);
-    P[i * 4] = x; P[i * 4 + 1] = spawnY + rng() * (b.y1 - b.y0) * .3; P[i * 4 + 2] = z; P[i * 4 + 3] = -rng() * grav * .1;
+    let x, z, ok = false;
+    if (!huge || rng() < .75) { const p = pours[i % pours.length];
+      for (let k = 0; k < 4 && !ok; k++) { x = p.x + (rng() + rng() - 1) * spread; z = p.z + (rng() + rng() - 1) * spread; ok = inside(x, z, b.y1 - 1e-3); } }
+    if (!ok) [x, z] = randInside(b.y1 - 1e-3);
+    P[i * 4] = x; P[i * 4 + 1] = spawnY + rng() * H * .3; P[i * 4 + 2] = z; P[i * 4 + 3] = -rng() * grav * .1;
   };
   const drawBalls = () => {
     for (let i = 0; i < S; i++) { const y = P[i * 4 + 1]; dummy.position.set(P[i * 4], y, P[i * 4 + 2]); dummy.quaternion.identity(); dummy.scale.setScalar(y > -1e8 ? br : 0); dummy.updateMatrix(); balls.setMatrixAt(i, dummy.matrix); }
@@ -945,18 +960,19 @@ function makeFill(spec, answer, objSize, rng) {
   fill.update = dt => {
     fill.t += dt; pouring = fill.t < FILL_DUR;
     const k = clamp(fill.t / FILL_DUR, 0, 1), f = easeInOutSine(k);
-    fill.fraction = f; fill.count = Math.round(answer * f); fill.level = levelAt(f); setLevel(fill.level);
-    for (const p of pours) { p.wait -= dt; if (p.wait <= 0) { [p.tx, p.tz] = randInside(b.y1 - 1e-3); p.wait = .8 + rng() * .8; } p.x = lerp(p.x, p.tx, 1 - Math.exp(-dt * 2)); p.z = lerp(p.z, p.tz, 1 - Math.exp(-dt * 2)); }
+    for (const p of pours) { p.wait -= dt; if (p.wait <= 0) { [p.tx, p.tz] = randInside(b.y1 - 1e-3); p.wait = 1.1 + rng() * 1.1; } const e = 1 - Math.exp(-dt * 1.2); p.x = lerp(p.x, p.tx, e); p.z = lerp(p.z, p.tz, e); }
+    fill.fraction = f; fill.count = Math.round(answer * f); fill.level = levelAt(f);
+    setLevel(fill.level, ampMax * Math.min(1, f * 5) * (1 - smooth(.62, 1, f)));
     if (pouring) { spawnAcc += dt * S / fallT * .95; while (spawnAcc >= 1) { spawnAcc--; spawn(next); next = (next + 1) % S; } }
     let alive = 0;
     for (let i = 0; i < S; i++) { const o = i * 4; if (P[o + 1] < -1e8) continue;
       P[o + 3] -= grav * dt; P[o + 1] += P[o + 3] * dt;
-      if (P[o + 1] <= fill.level + lr * .3) P[o + 1] = -1e9; else alive++; }
+      if (P[o + 1] <= Math.max(b.y0, surfaceAt(P[o], P[o + 2], fill.level)) + lr * .3) P[o + 1] = -1e9; else alive++; }
     drawBalls();
     plopT -= dt; if (pouring && plopT <= 0) { plop(.7 + rng() * .6, .12); plopT = huge ? .05 + rng() * .05 : .08 + rng() * .1; }
     if (!pouring && alive === 0) fill.done = true;
   };
-  fill.finish = () => { fill.t = FILL_DUR; fill.fraction = 1; fill.count = answer; fill.level = b.y1; setLevel(b.y1); for (let i = 0; i < S; i++) P[i * 4 + 1] = -1e9; drawBalls(); fill.done = true; };
+  fill.finish = () => { fill.t = FILL_DUR; fill.fraction = 1; fill.count = answer; fill.level = b.y1; setLevel(b.y1, 0); for (let i = 0; i < S; i++) P[i * 4 + 1] = -1e9; drawBalls(); fill.done = true; };
   return fill;
 }
 
@@ -967,11 +983,12 @@ function makeGuessLine(spec, fill, guess, answer, objSize) {
   const b = spec.bounds, f = guess / answer; let y = 0, capped = false;
   if (f <= 1) y = fill.levelAt(f);
   else { y = b.y1 + (f - 1) * fill.Vvis / fill.topArea; const maxY = b.y1 + (b.y1 - b.y0) * 1.1 + objSize * .08; if (y > maxY) { y = maxY; capped = true; } }
+  if (f > 1) return { mesh: null, pts: spec.outline(b.y1 - 1e-3), y: b.y1, over: true, capped, shown: false }; // tag only, no floating ring
   const pts = spec.outline(clamp(y, b.y0 + 1e-3, b.y1 - 1e-3)).map(p => (p.y = y, p));
   const geo = new THREE.TubeGeometry(new PolyCurve(pts), pts.length * 4, objSize * .0032, 6, true);
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x1d1a19, depthTest: false, transparent: true, opacity: .9 }));
-  mesh.renderOrder = 20;
-  return { mesh, pts, y, over: f > 1, capped };
+  mesh.renderOrder = 20; mesh.visible = false;
+  return { mesh, pts, y, over: false, capped, shown: false };
 }
 
 /* ===================== camera ===================== */
@@ -989,7 +1006,7 @@ function stepCam(dt) {
   if (!camTween) return; const tw = camTween; tw.t += dt; const k = clamp(tw.t / tw.dur, 0, 1), e = (tw.ease || easeInOutCubic)(k);
   const { from: a, to: b } = tw;
   const d = tw.exp ? a.dist * Math.pow(b.dist / a.dist, e) : lerp(a.dist, b.dist, e);
-  let w = e;
+  let w = tw.wfn ? tw.wfn(k) : e;
   if (tw.intro) { // keep the scoop in frame while pulling back, then settle on the object
     const lin = clamp((d - a.dist) / (b.dist - a.dist), 0, 1), sep = a.target.distanceTo(b.target) || 1;
     const halfH = Math.atan(Math.tan(cam.fov * Math.PI / 360) * cam.aspect), maxW = d * Math.tan(Math.min(halfH, cam.fov * Math.PI / 360)) * .55 / sep;
@@ -1013,7 +1030,7 @@ scene.add(blob);
 
 function disposeRound() {
   if (!R) return;
-  scene.remove(R.model.group); if (R.fill) scene.remove(R.fill.group); if (R.line) { scene.remove(R.line.mesh); R.line.mesh.geometry.dispose(); R.line.mesh.material.dispose(); }
+  scene.remove(R.model.group); if (R.fill) scene.remove(R.fill.group); if (R.line && R.line.mesh) { scene.remove(R.line.mesh); R.line.mesh.geometry.dispose(); R.line.mesh.material.dispose(); }
   const kill = o => o.traverse(n => { if (n.geometry && !n.geometry.userData.keep) n.geometry.dispose(); if (n.isInstancedMesh) n.dispose(); if (n.userData.ownMat) n.material.dispose(); });
   kill(R.model.group); if (R.fill) kill(R.fill.group);
   R = null;
@@ -1045,9 +1062,9 @@ function setupRound(idx) {
   const sc = sun.shadow.camera; sc.left = sc.bottom = -objSize * .85; sc.right = sc.top = objSize * .85; sc.near = L * .3; sc.far = L * 3; sc.updateProjectionMatrix();
   sun.shadow.normalBias = objSize * .0012;
   ground.scale.setScalar(objSize * 40); ground.position.set(center.x, 0, center.z);
-  controls.minDistance = sphere.radius * .35; controls.maxDistance = view.dist * 2.2;
+  controls.minDistance = sphere.radius * .35; controls.maxDistance = view.dist * 2.2; controls.target.copy(target);
   const rng = mulberry32(xmur3(TODAY + obj.id)());
-  R = { idx, obj, answer, model, size, center, objSize, view, rng, sPos, fill: null, line: null, guess: null };
+  R = { idx, obj, answer, model, size, center, objSize, view, rng, sPos, fill: null, line: null, guess: null, minD: sphere.radius * .35, scoopZoom: false };
   return R;
 }
 
@@ -1077,7 +1094,34 @@ ui.gin.addEventListener('input', () => {
 });
 ui.gin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitGuess(); } });
 ui.form.addEventListener('submit', e => { e.preventDefault(); submitGuess(); });
-ui.reset.addEventListener('click', () => { if (state !== 'guess' && state !== 'result') return; lockCam(); tweenCam(R.view, .7, { done: () => unlockCam() }); });
+const freeState = () => state === 'guess' || state === 'result' || state === 'done';
+function setOrbitLimits(zoomed) {
+  controls.minDistance = zoomed ? SCOOP_R * 3 : R.minD; controls.maxDistance = R.view.dist * 2.2;
+  controls.target.copy(zoomed ? heroScoop.position : R.view.target);
+}
+ui.reset.addEventListener('click', () => { if (!freeState() || camTween) return; R.scoopZoom = false; lockCam();
+  tweenCam(R.view, .7, { exp: true, done: () => { setOrbitLimits(false); unlockCam(); } }); });
+
+/* Tap "1 scoop" to fly in close; orbit around the scoop to compare; tap the scene to fly back out */
+function enterScoopZoom() {
+  if (!R || !freeState() || R.scoopZoom || camTween) return;
+  ensureAudio(); R.scoopZoom = true; lockCam(); plop(1.3, .15);
+  const s = heroScoop.position;
+  tweenCam({ target: s.clone(), dist: SCOOP_R * 8, polar: 1.25, az: camS.az + .25 }, reduceMotion ? .3 : 1.1, { exp: true, wfn: k => smooth(0, .45, k), // aim at the scoop first, then close in
+    done: () => { setOrbitLimits(true); unlockCam(); toast('Tap the scene to zoom back out'); } });
+}
+function exitScoopZoom() {
+  if (!R || !R.scoopZoom || camTween) return;
+  R.scoopZoom = false; lockCam();
+  tweenCam(R.view, reduceMotion ? .3 : 1.0, { exp: true, wfn: k => smooth(.5, 1, k), done: () => { setOrbitLimits(false); unlockCam(); } });
+}
+ui.scoopTag.addEventListener('click', enterScoopZoom);
+let tap = null;
+canvas.addEventListener('pointerdown', e => { tap = e.isPrimary ? { x: e.clientX, y: e.clientY, t: performance.now() } : null; });
+canvas.addEventListener('pointerup', e => {
+  if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 8 && performance.now() - tap.t < 350) exitScoopZoom();
+  tap = null;
+});
 
 function setQuestion(o) { ui.q.innerHTML = `How many scoops fill <em>${o.q}</em>?`; }
 
@@ -1104,7 +1148,8 @@ function submitGuess() {
   DB.day.rounds[R.idx] = { id: R.obj.id, guess, answer: R.answer, acc };
   if (DB.day.rounds.filter(Boolean).length >= DAILY.length && !DB.day.done) completeDay();
   save();
-  state = 'fill'; ui.gin.blur(); lockCam();
+  state = 'fill'; ui.gin.blur(); lockCam(); camTween = null;
+  if (R.scoopZoom) { R.scoopZoom = false; setOrbitLimits(false); }
   ui.form.className = 'gone'; ui.reset.classList.remove('show'); ui.qwrap.classList.add('away');
   ui.cnum.textContent = '0'; ui.counter.classList.add('show');
   beginFill(false);
@@ -1113,14 +1158,20 @@ function submitGuess() {
 function beginFill(instant) {
   const spec = R.model.fill, b = spec.bounds;
   R.fill = makeFill(spec, R.answer, R.objSize, R.rng); scene.add(R.fill.group);
-  R.line = makeGuessLine(spec, R.fill, R.guess, R.answer, R.objSize); scene.add(R.line.mesh);
-  ui.guessTag.textContent = R.line.capped ? 'your guess ↑ (way above)' : R.line.over ? 'your guess (over the top)' : 'your guess';
+  R.line = makeGuessLine(spec, R.fill, R.guess, R.answer, R.objSize); if (R.line.mesh) scene.add(R.line.mesh);
+  ui.guessTag.textContent = 'your guess';
   const shells = []; R.model.group.traverse(n => n.userData.shell && shells.push(n));
   R.shells = shells; R.shellT = 0;
-  if (instant) { R.fill.finish(); setShellOpacity(R.model.closed ? .28 : 1); return; }
+  if (instant) { R.fill.finish(); setShellOpacity(R.model.closed ? .28 : 1); revealGuess(); return; }
   const top = new V3((b.minX + b.maxX) / 2, lerp(b.y0, b.y1, .45), (b.minZ + b.maxZ) / 2);
   const fv = { target: top, dist: R.view.dist, polar: R.model.closed ? .66 : .78, az: camS.az };
   tweenCam(fv, CAM_FILL_DUR, { done: () => { R.pouring = true; fillTone(FILL_DUR); } });
+}
+/* The guess ring appears only once the ice cream reaches it, so submitting gives nothing away */
+function revealGuess() {
+  if (!R.line || R.line.shown) return; R.line.shown = true;
+  if (R.line.mesh) R.line.mesh.visible = true;
+  ui.guessTag.textContent = R.line.over ? 'your guess ↑ higher' : 'your guess';
   ui.guessTag.classList.add('show');
 }
 function setShellOpacity(o) { for (const m of R.shells) { const t = o < .999, mt = m.material;
@@ -1134,13 +1185,14 @@ function updateFill(dt) {
   if (!R.pouring) return;
   R.fill.update(dt);
   ui.cnum.textContent = fmt(R.fill.count);
+  if (R.line && !R.line.over && R.fill.level >= R.line.y) { revealGuess(); plop(1.4, .2); }
   tickT -= dt; if (R.fill.count !== lastCount && tickT <= 0) { tick(); tickT = .07; } lastCount = R.fill.count;
   if (R.fill.done) finishFill();
 }
 function finishFill() {
   R.pouring = false; state = 'result';
   ui.cnum.textContent = fmt(R.answer);
-  unlockCam(); ui.reset.classList.add('show');
+  unlockCam(); ui.reset.classList.add('show'); revealGuess();
   showCard(); chime(R.acc >= 80);
   if (R.acc >= 95) { confetti(); }
 }
@@ -1236,6 +1288,7 @@ function updateLabels() {
   const s = toScreen(heroScoop.position), edge = toScreen(tmp.copy(heroScoop.position).addScaledVector(cam.up, SCOOP_R));
   const rp = Math.abs(edge.y - s.y), tag = ui.scoopTag, show = s.ok && state !== 'idle';
   tag.classList.toggle('show', show);
+  tag.classList.toggle('click', show && freeState() && !R.scoopZoom && !camTween);
   if (show) {
     const tw = tag.offsetWidth || 70, th = tag.offsetHeight || 26, off = rp + 26;
     let tx = s.x + off * .7, ty = s.y - off - th; let left = false;
@@ -1284,7 +1337,6 @@ function boot() {
     R.guess = r.guess; R.acc = r.acc; beginFill(true);
     Object.assign(camS, R.view); camS.target = R.view.target.clone(); applyCam(); unlockCam();
     state = 'done'; ui.form.className = 'gone'; ui.qwrap.classList.add('away'); ui.reset.classList.add('show'); ui.results.classList.add('show');
-    ui.guessTag.classList.add('show');
     openEnd(); return;
   }
   const go = () => startRound(done);
