@@ -80,10 +80,14 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 .pill:active{transform:scale(.96)}
 .pill:disabled{opacity:.28;cursor:default;transform:none}
 .pill.sm{height:46px;padding:0 20px;font-size:16px}
-#counter{text-align:center;display:none;padding-bottom:4px}
+#counter{position:relative;height:92px;text-align:center;display:none;overflow:hidden}
 #counter.show{display:block}
-#cnum{display:block;font-weight:900;font-size:clamp(40px,12vw,60px);letter-spacing:-.06em;line-height:1;font-variant-numeric:tabular-nums}
-#counter span{font-weight:800;font-size:15px;color:#6f625c}
+.cblk{position:absolute;left:0;right:0;bottom:2px;transition:transform .85s cubic-bezier(.65,0,.35,1),opacity .85s cubic-bezier(.65,0,.35,1)}
+.cblk span{display:block;font-weight:800;font-size:15px;color:#6f625c;margin-bottom:2px}
+.cblk b{display:block;font-weight:900;font-size:clamp(40px,12vw,60px);letter-spacing:-.06em;line-height:1;font-variant-numeric:tabular-nums}
+#cReal{transform:translateY(-40px);opacity:0}
+#counter.real #cYour{transform:translateY(40px);opacity:0}
+#counter.real #cReal{transform:none;opacity:1}
 
 /* Result card */
 #card{position:absolute;top:calc(env(safe-area-inset-top) + 58px);left:10px;right:10px;max-height:34vh;overflow:hidden;
@@ -150,6 +154,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
   #card.show{animation:fade .25s forwards;transform:none}
   #card.hide{animation:none;visibility:hidden}
   .stamp.show{animation:none;opacity:.92}
+  .cblk{transition-duration:.25s}
 }
 </style>
 <script type="importmap">
@@ -189,7 +194,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
   <div class="spacer"></div>
   <div id="bottom">
     <div class="chiprow"><button class="chip" id="bResults">results</button><button class="chip" id="bReset">↺ reset view</button></div>
-    <div id="counter"><b id="cnum">0</b><span>scoops</span></div>
+    <div id="counter"><div class="cblk" id="cYour"><span>your scoops</span><b id="cnum">0</b></div><div class="cblk" id="cReal"><span>real scoops</span><b id="cnumReal">0</b></div></div>
     <form id="guessForm" class="off" autocomplete="off" onsubmit="return false">
       <input id="gin" type="text" inputmode="numeric" pattern="[0-9,]*" enterkeyhint="done" placeholder="your guess" aria-label="Your guess in scoops" disabled>
       <button class="pill" id="bSubmit" type="submit" disabled>Submit</button>
@@ -437,20 +442,6 @@ const frostTex = canvasTex(256, 256, (g, w, h) => {      // speckle bump map: fr
   for (let i = 0; i < 2600; i++) { const v = 90 + r() * 120 | 0; g.fillStyle = `rgba(${v},${v},${v},${.25 + r() * .4})`;
     const x = r() * w, y = r() * h, s = .6 + r() * 2.2; g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); }
 });
-const packTex = canvasTex(512, 512, (g, w, h) => {      // side view of packed scoops for the rising fill
-  g.fillStyle = FLAVORS[0]; g.fillRect(0, 0, w, h);
-  const r = mulberry32(11);
-  for (let i = 0; i < 95; i++) {
-    const x = r() * w, y = r() * h, s = 26 + r() * 26, c = new THREE.Color(FLAVORS[pickFlavor(r)]);
-    for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) {
-      const gr = g.createRadialGradient(x + dx - s * .3, y + dy - s * .35, s * .1, x + dx, y + dy, s);
-      gr.addColorStop(0, '#' + c.clone().lerp(new THREE.Color('#fff'), .35).getHexString());
-      gr.addColorStop(.75, '#' + c.getHexString()); gr.addColorStop(1, '#' + c.clone().multiplyScalar(.82).getHexString());
-      g.fillStyle = gr; g.beginPath(); g.arc(x + dx, y + dy, s, 0, 7); g.fill();
-    }
-  }
-});
-packTex.colorSpace = THREE.SRGBColorSpace;
 const blobTex = canvasTex(128, 128, (g, w) => { const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
   gr.addColorStop(0, 'rgba(90,40,20,.55)'); gr.addColorStop(.5, 'rgba(90,40,20,.22)'); gr.addColorStop(1, 'rgba(90,40,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, w); }, false);
 
@@ -523,10 +514,6 @@ function stadiumPts(hl, hw, n = 64) { const pts = [], c = Math.max(0, hl - hw), 
   return pts; }
 function inStadium(x, z, hl, hw) { const c = Math.max(0, hl - hw), ax = Math.abs(x); return ax <= c ? Math.abs(z) <= hw : (ax - c) ** 2 + z * z <= hw * hw; }
 const rectOutline = (x0, x1, z0, z1) => [new V3(x0, 0, z0), new V3(x1, 0, z0), new V3(x1, 0, z1), new V3(x0, 0, z1)];
-/* Re-map UVs to world space so the packed-scoop texture tiles evenly on any fill shape */
-function worldUV(geo, tile) { const p = geo.attributes.position, uv = [];
-  for (let i = 0; i < p.count; i++) uv.push((p.getX(i) + p.getZ(i) * .7) / tile, p.getY(i) / tile);
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); return geo; }
 
 /* ===================== the scoop ===================== */
 function scoopGeo(detail, seed = 1.3) {
@@ -545,15 +532,14 @@ const SCOOP_MID = cached('scoopMid', () => scoopGeo(3, 2.1));
 const SCOOP_LOW = cached('scoopLow', () => scoopGeo(1, .7));
 const SCOOP_LUMP = cached('scoopLump', () => scoopGeo(2, 3.3));
 const scoopMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .55, bumpMap: frostTex, bumpScale: 1.2 });
-const fillMat = new THREE.MeshStandardMaterial({ map: packTex, roughness: .7, bumpMap: frostTex, bumpScale: 1, side: THREE.DoubleSide });
-const fillPlane = new THREE.Plane(new V3(0, -1, 0), 0);
-fillMat.clippingPlanes = [fillPlane];
 const heroMats = FLAVORS.map(c => new THREE.MeshPhysicalMaterial({ color: c, roughness: .5, bumpMap: frostTex, bumpScale: 1.4, sheen: .6, sheenRoughness: .5, sheenColor: new THREE.Color('#fff') }));
 
 /* =====================================================================
    MODELS — each builder returns:
    group   : THREE.Group, sitting on the ground (y = 0), units in meters
-   fill    : { bounds, inside(x,z,y), solid (geometry), outline(y) → loop of points }
+   fill    : { bounds, inside(x,z,y), outline(y), overflow? } — the interior to fill
+   solidAt : (x,y,z) → true inside the object's walls (what balls bounce off)
+   footprint: optional [[x,z]…] outline of the base (default: bounding box)
    closed  : true if the shell should go see-through during the fill
    view    : default camera { az, polar }
    ===================================================================== */
@@ -595,13 +581,13 @@ const MODELS = {
     for (const z of [-.012, .012]) mk(sph(.005, 8), M('#222', .4), .055, .095, z, duck, false);
 
     const y0 = yb + .03, iL = L - T, iW = W - T;
-    const solid = taperGeo(up(ext(shp(iL + .006, iW + .006), yt - y0 + .01), y0 - .005));
     return {
       group: g, closed: false, view: { az: .62, polar: 1.08 },
+      solidAt: (x, y, z) => y > yb - .035 && y < yt + .015 && inStadium(x, z, (L + .02) * taper(y), (W + .02) * taper(y)) && !(y >= y0 && inStadium(x, z, iL * taper(y), iW * taper(y))),
       fill: {
         bounds: { minX: -iL, maxX: iL, minZ: -iW, maxZ: iW, y0, y1: yt },
         inside: (x, z, y) => y >= y0 && y <= yt && inStadium(x, z, iL * taper(y), iW * taper(y)),
-        solid, outline: y => stadiumPts(iL * taper(y) + .004, iW * taper(y) + .004, 72).map(([x, z]) => new V3(x, y, z)),
+        outline: y => stadiumPts(iL * taper(y) + .004, iW * taper(y) + .004, 72).map(([x, z]) => new V3(x, y, z)),
       },
     };
   },
@@ -651,14 +637,16 @@ const MODELS = {
     for (const z of [-.5, .5]) mk(cyl(.05, .05, .1, 12), trim, -2.6, .42, z, g, false).rotation.z = Math.PI / 2;
 
     const P = [[-2.2, .45], [1.3, .45], [1.3, .95], [1.0, 1.02], [.2, 1.45], [-.9, 1.52], [-1.65, 1.45], [-2.2, 1.06]];
-    const hw = .78;
+    const hw = .78, PO = [[-2.58, .3], [2.58, .3], [2.58, .92], [1.12, 1.06], [.2, 1.58], [-.9, 1.65], [-1.75, 1.57], [-2.35, 1.1], [-2.6, .98]];
+    const ovU = { type: 'door', at: new V3(.25, .5, 1.02), dir: [0, 1], w: 1.0, h: .6, hole: true, open: k => { door.rotation.y = 1.15 * k; } };
     return {
       group: g, closed: true, view: { az: .78, polar: 1.2 },
+      solidAt: (x, y, z) => Math.abs(z) < 1.0 && inPoly(x, y, PO) && !(Math.abs(z) <= hw && inPoly(x, y, P)) && !(ovU.holeOpen && x > -.45 && x < .95 && y > .45 && y < 1.4 && z > .55),
       fill: {
-        overflow: { type: 'door', at: new V3(.25, .5, 1.02), dir: [0, 1], w: 1.0, h: .6, open: k => { door.rotation.y = 1.15 * k; } },
+        overflow: ovU,
         bounds: { minX: -2.2, maxX: 1.3, minZ: -hw, maxZ: hw, y0: .45, y1: 1.52 },
         inside: (x, z, y) => Math.abs(z) <= hw && inPoly(x, y, P),
-        solid: extrudeZ(shapeFrom(P), hw * 2, 0), outline: y => { const [a, b] = polyXExtent(P, y); return rectOutline(a, b, -hw - .01, hw + .01).map(p => (p.y = y, p)); },
+        outline: y => { const [a, b] = polyXExtent(P, y); return rectOutline(a, b, -hw - .01, hw + .01).map(p => (p.y = y, p)); },
       },
     };
   },
@@ -697,13 +685,16 @@ const MODELS = {
     const wheel = (x, w, z) => { const t = mk(cyl(.52, .52, w, 28), black, x, .52, z, g); t.rotation.x = Math.PI / 2;
       mk(cyl(.26, .26, w + .02, 20), M('#D8DCE0', .35, .6), x, .52, z, g, false).rotation.x = Math.PI / 2; };
     for (const z of [-1, 1]) { wheel(4.35, .34, z * 1.0); wheel(-2.7, .58, z * .95); }
+    const ovB = { type: 'door', at: new V3(3.31, .95, 1.3), dir: [0, 1], w: .6, h: 1.3, hole: true, open: k => doorP.forEach(([pv, sd]) => { pv.rotation.y = -sd * 1.45 * k; }) };
     return {
       group: g, closed: true, view: { az: .66, polar: 1.18 },
+      solidAt: (x, y, z) => { const body = x > -5.85 && x < 3.95 && y > .72 && y < 3.22 && Math.abs(z) < 1.27, hood = x >= 3.95 && x < 5.65 && y > .72 && y < 1.78 && Math.abs(z) < 1.12;
+        if (!body && !hood) return false; if (x >= -5.62 && x <= 3.75 && Math.abs(z) <= 1.12 && y >= .95 && y <= 3.0) return false;
+        return !(ovB.holeOpen && x > 2.9 && x < 3.72 && y > .95 && y < 2.75 && z > .9); },
       fill: {
-        overflow: { type: 'door', at: new V3(3.31, .95, 1.3), dir: [0, 1], w: .6, h: 1.3, open: k => doorP.forEach(([pv, sd]) => { pv.rotation.y = -sd * 1.45 * k; }) },
+        overflow: ovB,
         bounds: { minX: -5.62, maxX: 3.75, minZ: -1.12, maxZ: 1.12, y0: .95, y1: 3.0 },
         inside: (x, z, y) => x >= -5.62 && x <= 3.75 && Math.abs(z) <= 1.12 && y >= .95 && y <= 3.0,
-        solid: (() => { const b = new THREE.BoxGeometry(9.37, 2.05, 2.24); b.translate(-.935, 1.975, 0); return b; })(),
         outline: y => rectOutline(-5.64, 3.77, -1.14, 1.14).map(p => (p.y = y, p)),
       },
     };
@@ -748,10 +739,10 @@ const MODELS = {
     }
     return {
       group: g, closed: false, view: { az: .55, polar: .98 },
+      solidAt: (x, y, z) => Math.abs(x) < 28 && Math.abs(z) < 15.5 && y < D + .05 && !(Math.abs(x) <= 24.95 && Math.abs(z) <= 12.45 && y >= .2),
       fill: {
         bounds: { minX: -24.95, maxX: 24.95, minZ: -12.45, maxZ: 12.45, y0: .2, y1: D },
         inside: (x, z, y) => Math.abs(x) <= 24.95 && Math.abs(z) <= 12.45 && y >= .2 && y <= D,
-        solid: (() => { const b = new THREE.BoxGeometry(50, 2.05, 25); b.translate(0, 1.175, 0); return b; })(),
         outline: y => rectOutline(-24.9, 24.9, -12.4, 12.4).map(p => (p.y = y, p)),
       },
     };
@@ -803,18 +794,15 @@ const MODELS = {
     for (let z = -22; z <= 22; z += 3.4) { const hx = 29 * Math.sqrt(Math.max(0, 1 - (z / (30 * K)) ** 2)); if (hx > 1) mk(unitBox, stoneL, 0, .9, z, g).scale.set(hx * 1.9, 1.2, .55); }
     mk(unitBox, stoneL, 0, .9, 0, g).scale.set(.6, 1.2, 46);
     mk(rbox(22, .5, 36, .2), M('#A9794F', .8), 21, .55, 0, g);                   // rebuilt wooden arena floor
-    // fill = bowl above the seats, nudged into the stone so edges never flicker
-    const prof = [[.01, .25], [43.4, .25]];
-    for (let i = 1; i < pts.length; i++) prof.push([pts[i][0] + .4, pts[i][1] - .4]);
-    prof.push([91.9, HT], [.01, HT]);
-    const solid = new THREE.LatheGeometry(prof.map(([a, b]) => new THREE.Vector2(a, b)), 120); solid.scale(1, 1, K); solid.computeVertexNormals();
     return {
       group: g, closed: false, view: { az: .55, polar: .95 },
+      solidAt: (x, y, z) => y < HT + 1.4 && (x / (A + 1)) ** 2 + (z / (B + 1)) ** 2 <= 1 && !(y >= .3 && Math.hypot(x, z / K) <= R(Math.min(y, HT)) - .1),
+      footprint: Array.from({ length: 48 }, (_, i) => [(A + 10) * Math.cos(i / 48 * Math.PI * 2), (B + 9.5) * Math.sin(i / 48 * Math.PI * 2)]),
       fill: {
         overflow: { type: 'rim', offset: 3.5 },
         bounds: { minX: -91.5, maxX: 91.5, minZ: -91.5 * K, maxZ: 91.5 * K, y0: .3, y1: HT },
         inside: (x, z, yy) => yy >= .3 && yy <= HT && Math.hypot(x, z / K) <= R(yy) - .1,
-        solid, outline: yy => { const rr = Math.max(R(Math.min(yy, HT)), 43) + .3, o = []; for (let i = 0; i < 120; i++) { const a = i / 120 * Math.PI * 2; o.push(new V3(rr * Math.cos(a), yy, rr * K * Math.sin(a))); } return o; },
+        outline: yy => { const rr = Math.max(R(Math.min(yy, HT)), 43) + .3, o = []; for (let i = 0; i < 120; i++) { const a = i / 120 * Math.PI * 2; o.push(new V3(rr * Math.cos(a), yy, rr * K * Math.sin(a))); } return o; },
       },
     };
   },
@@ -829,261 +817,289 @@ function jarModel(o) {
   mk(new THREE.TorusGeometry(r + t, t * 1.2, 10, 48).rotateX(Math.PI / 2), M('#BFD9E0', .2), 0, h + t, 0, g);
   return {
     group: g, closed: false, view: { az: .6, polar: 1.1 },
+    solidAt: (x, y, z) => y < h + t * 2 && x * x + z * z <= (r + t * 1.5) ** 2 && !(y >= t && x * x + z * z <= r * r),
     fill: {
       bounds: { minX: -r, maxX: r, minZ: -r, maxZ: r, y0: t, y1: h + t },
       inside: (x, z, y) => y >= t && y <= h + t && x * x + z * z <= r * r,
-      solid: new THREE.CylinderGeometry(r * 1.002, r * 1.002, h, 40).translate(0, h / 2 + t, 0),
       outline: y => { const p = []; for (let i = 0; i < 64; i++) { const a = i / 64 * Math.PI * 2; p.push(new V3(Math.cos(a) * r * 1.01, y, Math.sin(a) * r * 1.01)); } return p; },
     },
   };
 }
 
-/* =====================================================================
-   FILL — pours the PLAYER'S guess, not the answer.
-   Under the answer: it stops partway. Over: it fills to the brim, then
-   spills out (over the rim, out of a door, or out of a burst point).
-   Three pour styles, picked by the answer size:
-   small  (≤ 300)        every scoop drops on its own and piles up
-   medium (≤ 5,000,000)  a stream of balls, each standing in for a group
-   huge                  a dense spray of tiny scoops + a rising lumpy top
-   ===================================================================== */
-const SPILL_CAP = isMobile ? 900 : 1400;
 /* Instances are packed so hidden ones cost nothing: call put() for each visible one, then end() */
 function packer(mesh, dummy) { let n = 0; return {
   put(x, y, z, s, q, color) { dummy.position.set(x, y, z); if (q) dummy.quaternion.copy(q); else dummy.quaternion.identity(); dummy.scale.setScalar(s);
     dummy.updateMatrix(); mesh.setMatrixAt(n, dummy.matrix); mesh.setColorAt(n, color); n++; },
   end() { mesh.count = n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; n = 0; } }; }
-const randColor = rng => new THREE.Color(FLAVORS[pickFlavor(rng)]);
-function makeFill(spec, answer, guess, objSize, objBox, rng) {
-  const { inside, bounds: b } = spec;
-  const NY = 56, NG = 44, bw = b.maxX - b.minX, bd = b.maxZ - b.minZ, cell = bw * bd / (NG * NG);
-  const ys = [], areas = [];
-  for (let j = 0; j <= NY; j++) {
-    const y = lerp(b.y0 + 1e-4, b.y1 - 1e-4, j / NY); let c = 0;
-    for (let ix = 0; ix < NG; ix++) for (let iz = 0; iz < NG; iz++) if (inside(b.minX + (ix + .5) * bw / NG, b.minZ + (iz + .5) * bd / NG, y)) c++;
-    ys.push(y); areas.push(c * cell);
-  }
-  const cum = [0]; for (let j = 1; j <= NY; j++) cum.push(cum[j - 1] + (areas[j - 1] + areas[j]) / 2 * (ys[j] - ys[j - 1]));
-  const Vvis = cum[NY] || 1, maxA = Math.max(...areas);
-  const levelAt = f => { const t = clamp(f, 0, 1) * Vvis; let j = 1; while (j < NY && cum[j] < t) j++;
-    const a = cum[j - 1], c = cum[j]; return lerp(ys[j - 1], ys[j], c > a ? (t - a) / (c - a) : 0); };
-  const mode = answer <= 300 ? 'small' : answer <= 5e6 ? 'medium' : 'huge', huge = mode === 'huge';
-  const group = new THREE.Group(), dummy = new THREE.Object3D(), col = new THREE.Color();
-  const randInside = y => { for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (inside(x, z, y)) return [x, z]; } return [(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2]; };
-  // timeline: phase 1 pours into the object, phase 2 (over-guesses only) spills out
-  const fg = guess / answer, over = fg > 1, fEnd = Math.min(1, fg);
-  const D1 = over ? FILL_DUR * .6 : FILL_DUR * lerp(.55, 1, Math.sqrt(fEnd)), D2 = over ? FILL_DUR * .8 : 0;
-  const fill = { mode, group, level: b.y0, fraction: 0, count: 0, done: false, t: 0, over, spillReach: 0 };
-  const H = b.y1 - b.y0, side = Math.sqrt(maxA);
-  const sp = Math.max(SCOOP_R * 2 * .85, Math.sqrt(maxA / LUMP_CAP)), lr = sp * .72;
-  const br = mode === 'small' ? SCOOP_R : huge ? objSize * .005 : Math.max(SCOOP_R, objSize * .006);
+/* =====================================================================
+   POUR — the fill, with simple ball physics.
+   Each visible ball stands for a group of scoops. Its size is chosen so a
+   pile of these balls takes up the same room as that many scoops, so the
+   pile itself shows the amount.
+   1) "your scoops": the player's guess falls from the sky and piles up.
+   2) correction: too few → more balls drop until it's full;
+                  too many → the floor opens and the spill falls away.
+   Settled balls freeze in place (they become static), which keeps the
+   physics cheap: only moving balls are simulated.
+   ===================================================================== */
+const MAX_BALLS = isMobile ? 650 : 1000;   // visible balls per phase
+const PACKING = .6;                        // how tightly loose balls pack
+const PIT_COLOR = '#5b3626';
 
-  /* ---------- spill: a pile outside the object that grows with the extra ice cream ---------- */
-  let spill = null;
-  if (over) {
-    const ov = spec.overflow || { type: 'rim' }, Es = Vvis * (fg - 1);
-    const S2 = huge ? (isMobile ? 380 : 560) : 220, Q = new Float32Array(S2 * 7); // x y z vx vy vz dd0
-    for (let i = 0; i < S2; i++) Q[i * 7 + 1] = -1e9;
-    const sballs = new THREE.InstancedMesh(SCOOP_LOW, scoopMat, S2); sballs.frustumCulled = false;
-    const sCol = Array.from({ length: S2 }, () => randColor(rng)), sPack = packer(sballs, dummy); sballs.count = 0;
-    group.add(sballs);
-    const cand = []; let hcFull, hcap, heightAt, spawnOut, grow, ssp;
-    if (ov.type === 'rim') {
-      const loop = spec.outline(b.y1 - 1e-3).map(p => [p.x, p.z]); let per = 0;
-      for (let i = 0; i < loop.length; i++) { const [x1, z1] = loop[i], [x2, z2] = loop[(i + 1) % loop.length]; per += Math.hypot(x2 - x1, z2 - z1); }
-      const lx = Math.max(...loop.map(p => Math.abs(p[0]))), lz = Math.max(...loop.map(p => Math.abs(p[1])));
-      const off = ov.offset ?? Math.max(0, Math.min(objBox.max.x - lx, objBox.max.z - lz));
-      // the ring of spilled ice cream rises to the rim height, then spreads outward
-      hcap = b.y1; const k = clamp(b.y1 / (objSize * .25), .3, .6), peakMax = hcap + k * objSize * .25;
-      hcFull = Math.min(peakMax, Math.sqrt(2 * k * Es / per));
-      const reach = off + peakMax / k, area = (per + 2 * Math.PI * reach) * reach; ssp = Math.max(sp, Math.sqrt(area / SPILL_CAP));
-      const distLoop = (x, z) => { let d = Infinity; for (let i = 0; i < loop.length; i++) { const [ax, az] = loop[i], [bx, bz] = loop[(i + 1) % loop.length];
-        const vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz || 1, t = clamp(((x - ax) * vx + (z - az) * vz) / l2, 0, 1); d = Math.min(d, Math.hypot(x - ax - vx * t, z - az - vz * t)); } return d; };
-      for (let z = -lz - reach, row = 0; z <= lz + reach; z += ssp * .866, row++) for (let x = -lx - reach + (row % 2) * ssp * .5; x <= lx + reach; x += ssp) {
-        const jx = x + (rng() - .5) * ssp * .3, jz = z + (rng() - .5) * ssp * .3;
-        if (inPoly(jx, jz, loop)) continue; const dd = distLoop(jx, jz) - off; if (dd < 0 || dd > peakMax / k) continue;
-        cand.push({ x: jx, z: jz, dd, s: .82 + rng() * .3, jy: (rng() - .5) * .3 });
+function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
+  const spec = model.fill, inside = spec.inside, b = spec.bounds, H = b.y1 - b.y0;
+  const ov = spec.overflow || null, closed = model.closed;
+  const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+  const group = new THREE.Group();
+
+  // ---- interior volume, as modeled (balls are sized against this) ----
+  let Vvis = 0; { const NY = 36, NG = 32, bw = b.maxX - b.minX, bd = b.maxZ - b.minZ;
+    for (let j = 0; j < NY; j++) { const y = lerp(b.y0, b.y1, (j + .5) / NY); let c = 0;
+      for (let ix = 0; ix < NG; ix++) for (let iz = 0; iz < NG; iz++) if (inside(b.minX + (ix + .5) * bw / NG, b.minZ + (iz + .5) * bd / NG, y)) c++;
+      Vvis += c / (NG * NG) * bw * bd * H / NY; } }
+  Vvis = Math.max(Vvis, 1e-9);
+  const rFor = ratio => Math.min(objSize * .08, Math.cbrt(Vvis / answer * ratio * PACKING * 3 / (4 * Math.PI)));
+
+  // ---- the object's walls as a voxel signed-distance field ----
+  const solid0 = model.solidAt || ((x, y, z) => x > objBox.min.x && x < objBox.max.x && z > objBox.min.z && z < objBox.max.z && y < objBox.max.y && !inside(x, z, y));
+  const solidAt = (x, y, z) => solid0(x, y, z) && !(ov && ov.type === 'burst' && ov.holeOpen && Math.hypot(x - ov.at.x, y - ov.at.y, z - ov.at.z) < (ov.w || .4)); // a burst point breaks open
+  const vs = objSize / (isMobile ? 56 : 70);
+  const ox = objBox.min.x - 2 * vs, oy = -vs, oz = objBox.min.z - 2 * vs;
+  const nx = Math.ceil((objBox.max.x - ox) / vs) + 3, ny = Math.ceil((objBox.max.y - oy) / vs) + 3, nz = Math.ceil((objBox.max.z - oz) / vs) + 3;
+  const NV = nx * ny * nz, sdf = new Float32Array(NV);
+  const OFF = [];
+  for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const o = dx + nx * (dy + ny * dz); if (o < 0) OFF.push([dx, dy, dz, o, Math.hypot(dx, dy, dz)]); }
+  const chamfer = d => {
+    for (let pass = 0; pass < 2; pass++) {
+      const s = pass ? -1 : 1;
+      for (let k0 = 0; k0 < nz; k0++) { const k = pass ? nz - 1 - k0 : k0;
+        for (let j0 = 0; j0 < ny; j0++) { const j = pass ? ny - 1 - j0 : j0;
+          for (let i0 = 0; i0 < nx; i0++) { const i = pass ? nx - 1 - i0 : i0, id = i + nx * (j + ny * k); let v = d[id]; if (v === 0) continue;
+            for (let q = 0; q < OFF.length; q++) { const f = OFF[q], ii = i + s * f[0], jj = j + s * f[1], kk = k + s * f[2];
+              if (ii < 0 || jj < 0 || kk < 0 || ii >= nx || jj >= ny || kk >= nz) continue; const c = d[id + s * f[3]] + f[4]; if (c < v) v = c; }
+            d[id] = v; } } } }
+  };
+  const buildSDF = () => {
+    const solid = new Uint8Array(NV), dO = new Float32Array(NV), dI = new Float32Array(NV);
+    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const id = i + nx * (j + ny * k); solid[id] = solidAt(ox + (i + .5) * vs, oy + (j + .5) * vs, oz + (k + .5) * vs) ? 1 : 0;
+      dO[id] = solid[id] ? 0 : 1e9; dI[id] = solid[id] ? 1e9 : 0; }
+    chamfer(dO); chamfer(dI);
+    for (let id = 0; id < NV; id++) sdf[id] = (solid[id] ? -(Math.min(dI[id], 1e3) - .5) : (Math.min(dO[id], 1e3) - .5)) * vs;
+  };
+  buildSDF();
+  const sample = (x, y, z) => {
+    const fx = (x - ox) / vs - .5, fy = (y - oy) / vs - .5, fz = (z - oz) / vs - .5;
+    if (fx < 0 || fy < 0 || fz < 0 || fx >= nx - 1 || fy >= ny - 1 || fz >= nz - 1) return 1e9;
+    const i = fx | 0, j = fy | 0, k = fz | 0, tx = fx - i, ty = fy - j, tz = fz - k, id = i + nx * (j + ny * k), sy = nx, sz = nx * ny;
+    const c00 = lerp(sdf[id], sdf[id + 1], tx), c10 = lerp(sdf[id + sy], sdf[id + sy + 1], tx);
+    const c01 = lerp(sdf[id + sz], sdf[id + sz + 1], tx), c11 = lerp(sdf[id + sz + sy], sdf[id + sz + sy + 1], tx);
+    return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
+  };
+
+  // ---- balls ----
+  const CAP = MAX_BALLS * 2 + 64;
+  const px = new Float32Array(CAP), py = new Float32Array(CAP), pz = new Float32Array(CAP);
+  const qx = new Float32Array(CAP), qy = new Float32Array(CAP), qz = new Float32Array(CAP);   // previous positions
+  const vx = new Float32Array(CAP), vy = new Float32Array(CAP), vz = new Float32Array(CAP);
+  const rad = new Float32Array(CAP), scl = new Float32Array(CAP), still = new Float32Array(CAP);
+  const alive = new Uint8Array(CAP), awake = new Uint8Array(CAP), out = new Uint8Array(CAP), landed = new Uint8Array(CAP);
+  const sup = new Uint8Array(CAP), con = new Uint8Array(CAP), pm = new Float32Array(CAP);
+  const cols = [], quats = [];
+  let n = 0, rMax = SCOOP_R;
+  const g = Math.max(9.8, 2 * (H * 1.5 + objSize * .3) / (.95 * .95));
+  const addBall = (x, y, z, r, vx0 = 0, vy0 = 0, vz0 = 0, sleeping = false) => {
+    if (n >= CAP) return -1; const i = n++;
+    px[i] = qx[i] = x; py[i] = qy[i] = y; pz[i] = qz[i] = z; vx[i] = vx0; vy[i] = vy0; vz[i] = vz0;
+    rad[i] = r; scl[i] = 1; alive[i] = 1; awake[i] = sleeping ? 0 : 1; still[i] = 0; out[i] = 0; landed[i] = sleeping ? 1 : 0;
+    cols[i] = new THREE.Color(FLAVORS[pickFlavor(rng)]);
+    quats[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rng() * 6.3, rng() * 6.3, rng() * 6.3));
+    if (r > rMax) rMax = r; return i;
+  };
+  const geo = MAX_BALLS <= 400 ? SCOOP_MID : isMobile ? SCOOP_LOW : SCOOP_LUMP;
+  const mesh = new THREE.InstancedMesh(geo, scoopMat, CAP); mesh.count = 0; mesh.frustumCulled = false;
+  mesh.castShadow = !isMobile; mesh.receiveShadow = true; group.add(mesh);
+  const dummy = new THREE.Object3D(), pack = packer(mesh, dummy);
+
+  // spatial hash
+  const HB = 1 << 14, head = new Int32Array(HB), nxt = new Int32Array(CAP);
+  let cell = 1;
+  const hk = (i, j, k) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & (HB - 1);
+  const rebuildHash = () => { cell = rMax * 2; head.fill(-1);
+    for (let i = 0; i < n; i++) if (alive[i]) { const k = hk(Math.floor(px[i] / cell), Math.floor(py[i] / cell), Math.floor(pz[i] / cell)); nxt[i] = head[k]; head[k] = i; } };
+  const occupied = (x, y, z, r) => { // any ball overlapping this spot?
+    const ci = Math.floor(x / cell), cj = Math.floor(y / cell), ck = Math.floor(z / cell);
+    for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
+      for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) { const dx = px[j] - x, dy = py[j] - y, dz = pz[j] - z, rr = (rad[j] + r) * .85; if (dx * dx + dy * dy + dz * dz < rr * rr) return true; }
+    return false; };
+
+  // ---- the floor cut (for over-guesses) ----
+  const D = objSize * .7;
+  const foot = model.footprint || [[objBox.min.x, objBox.min.z], [objBox.max.x, objBox.min.z], [objBox.max.x, objBox.max.z], [objBox.min.x, objBox.max.z]];
+  const footR = Math.max(...foot.map(([x, z]) => Math.hypot(x - cx, z - cz)));
+  let holeR = 0, holeOn = false;
+  const inIsland = (x, z) => inPoly(x, z, foot);
+  const hasGround = (x, z) => !holeOn || (x - cx) ** 2 + (z - cz) ** 2 > holeR * holeR || inIsland(x, z);
+  const cut = new THREE.Group(); cut.visible = false; group.add(cut);
+  const occl = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+    uniforms: { uC: { value: new THREE.Vector2(cx, cz) }, uR: { value: 0 } }, colorWrite: false,
+    vertexShader: 'varying vec2 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.); vW = w.xz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: 'uniform vec2 uC; uniform float uR; varying vec2 vW; void main(){ if (distance(vW, uC) < uR) discard; gl_FragColor = vec4(0.); }' }));
+  occl.scale.setScalar(objSize * 60); occl.position.set(cx, 0, cz); occl.renderOrder = -10; cut.add(occl);
+  const pitM = new THREE.MeshStandardMaterial({ color: PIT_COLOR, roughness: 1, side: THREE.BackSide });
+  const pit = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, D, 64, 1, true), pitM); pit.position.set(cx, -D / 2, cz); cut.add(pit);
+  const pitFloor = new THREE.Mesh(new THREE.CircleGeometry(1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#2e1a12' })); pitFloor.position.set(cx, -D, cz); cut.add(pitFloor);
+  const islandShape = shapeFrom(foot);
+  const island = new THREE.Mesh(new THREE.ExtrudeGeometry(islandShape, { depth: D, bevelEnabled: false }).rotateX(Math.PI / 2),
+    [new THREE.MeshBasicMaterial({ color: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#F7DCC8', toneMapped: false }), new THREE.MeshStandardMaterial({ color: '#d9ab8e', roughness: 1 })]);
+  cut.add(island);
+  const setHole = r => { holeR = r; occl.material.uniforms.uR.value = r; pit.scale.set(r, 1, r); pitFloor.scale.set(r, 1, r); };
+
+  // ---- spawning ----
+  const queue = []; let qi = 0;
+  const skyY = () => b.y1 + H * .5 + objSize * .25 + rng() * objSize * .1;
+  const spot = () => { for (let k = 0; k < 40; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (inside(x, z, b.y1 - 1e-3)) return [x, z]; } return [cx, cz]; };
+  let doorOpen = false, doorT = 0;
+  const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; ov.holeOpen = true; buildSDF(); hooks.doorOpened && hooks.doorOpened(); };
+  const emitOut = r => { // out of the door / burst point
+    openDoor(); const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]), dx = ov.dir[0] / dl, dz = ov.dir[1] / dl, w = ov.w || .4, h = ov.h || .4;
+    const s = (rng() - .5) * w, v = Math.sqrt(g * H) * (.5 + rng() * .35);
+    addBall(at.x - dz * s + dx * r * 1.3, at.y + r + rng() * h, at.z + dx * s + dz * r * 1.3, r, dx * v + (rng() - .5) * v * .3, v * .25, dz * v + (rng() - .5) * v * .3);
+  };
+  const spawn = q => {
+    const r = q.r;
+    if (closed) {               // fill from just under the roof; when there's no room left, it pours out the door
+      for (let k = 0; k < 8; k++) { const [x, z] = spot(); let y = b.y1 - r * 1.05; while (y > b.y0 && !inside(x, z, y)) y -= r * .5;
+        if (inside(x, z, y) && !occupied(x, y, z, r)) { addBall(x, y, z, r, 0, -Math.sqrt(g * r), 0); return; } }
+      if (q.over && ov && ov.hole) emitOut(r);   // corrections never spill: a full car just stops taking more
+    } else { let x, z, y = skyY(); for (let k = 0; k < 6; k++) { [x, z] = spot(); if (!occupied(x, y, z, r * 1.2)) break; y += r * 2.5; }
+      addBall(x, y, z, r, 0, -rng() * Math.sqrt(g * H) * .3, 0); }
+  };
+  const schedule = (scoops, t0, over) => {   // returns the number of balls
+    const ratio = Math.max(1, Math.ceil(scoops / MAX_BALLS)), nb = Math.ceil(scoops / ratio), r = rFor(ratio);
+    const dur = (reduceMotion ? .5 : 1) * lerp(1.1, 3.6, clamp(Math.log(nb) / Math.log(MAX_BALLS), 0, 1));
+    for (let k = 0; k < nb; k++) queue.push({ t: t0 + (nb === 1 ? 0 : dur * k / (nb - 1)), r, over, scoops: k < nb - 1 ? ratio : scoops - ratio * (nb - 1) });
+    return { nb, dur };
+  };
+
+  // ---- physics step ----
+  let plopBudget = 0;
+  const step = dt => {
+    let maxV = 0; for (let i = 0; i < n; i++) if (awake[i]) maxV = Math.max(maxV, Math.abs(vx[i]) + Math.abs(vy[i]) + Math.abs(vz[i]));
+    let rMin = rMax; for (let i = 0; i < n; i++) if (awake[i] && rad[i] < rMin) rMin = rad[i];
+    const lim = .5 * Math.min(rMin, vs), ns = clamp(Math.ceil((maxV + g * dt) * dt / lim), 1, 8), h = dt / ns;
+    const damp = Math.exp(-7 * h), sdamp = Math.exp(-3 * h), maxStep = lim * 1.6;
+    for (let s = 0; s < ns; s++) {
+      rebuildHash();
+      for (let i = 0; i < n; i++) { if (!awake[i]) continue;
+        qx[i] = px[i]; qy[i] = py[i]; qz[i] = pz[i]; vy[i] -= g * h; pm[i] = Math.hypot(vx[i], vy[i], vz[i]);
+        let dx = vx[i] * h, dy = vy[i] * h, dz = vz[i] * h; const m = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
+        if (m > maxStep) { const f = maxStep / m; dx *= f; dy *= f; dz *= f; }
+        px[i] += dx; py[i] += dy; pz[i] += dz; sup[i] = 0; con[i] = 0; }
+      // ball-ball contacts (sleeping balls act as fixed)
+      for (let i = 0; i < n; i++) { if (!awake[i]) continue;
+        const ci = Math.floor(px[i] / cell), cj = Math.floor(py[i] / cell), ck = Math.floor(pz[i] / cell);
+        for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
+          for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) {
+            if (j === i || (awake[j] && j < i)) continue;
+            const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j], rr = rad[i] + rad[j], d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 >= rr * rr || d2 < 1e-12) continue;
+            const d = Math.sqrt(d2), pen = rr - d, nx0 = dx / d, ny0 = dy / d, nz0 = dz / d;
+            if (awake[j]) { const wi = rad[j] ** 3 / (rad[i] ** 3 + rad[j] ** 3), wj = 1 - wi;
+              px[i] += nx0 * pen * wi; py[i] += ny0 * pen * wi; pz[i] += nz0 * pen * wi; px[j] -= nx0 * pen * wj; py[j] -= ny0 * pen * wj; pz[j] -= nz0 * pen * wj;
+              con[j]++; if (ny0 < -.35) sup[j]++; }
+            else { px[i] += nx0 * pen; py[i] += ny0 * pen; pz[i] += nz0 * pen; }
+            con[i]++; if (ny0 > .35) sup[i]++;
+          } }
+      // walls and floor
+      for (let i = 0; i < n; i++) { if (!awake[i]) continue; const r = rad[i];
+        const d = sample(px[i], py[i], pz[i]);
+        if (d < r) { const e = vs * .5;
+          let gx = sample(px[i] + e, py[i], pz[i]) - sample(px[i] - e, py[i], pz[i]), gy = sample(px[i], py[i] + e, pz[i]) - sample(px[i], py[i] - e, pz[i]), gz = sample(px[i], py[i], pz[i] + e) - sample(px[i], py[i], pz[i] - e);
+          const gl = Math.hypot(gx, gy, gz); if (gl > 1e-9 && gl < 1e8) { gx /= gl; gy /= gl; gz /= gl; const p = r - d; px[i] += gx * p; py[i] += gy * p; pz[i] += gz * p; con[i]++; if (gy > .35) sup[i] += 2; } }
+        if (py[i] < r && qy[i] >= r * .4 && hasGround(px[i], pz[i])) { py[i] = r; con[i]++; sup[i] += 2; }
       }
-      heightAt = (dd, pk) => Math.min(hcap, pk - k * dd);
-      grow = o => hcFull * Math.sqrt(o);
-      spawnOut = i => { const k = rng() * loop.length | 0, [x, z] = loop[k], [nx, nz] = loop[(k + 1) % loop.length];
-        let ox = -(nz - z), oz = nx - x; const l = Math.hypot(ox, oz) || 1; ox /= l; oz /= l; if (inPoly(x + ox * .01, z + oz * .01, loop)) { ox = -ox; oz = -oz; }
-        const v = Math.sqrt(H + objSize * .02) * (1.2 + rng());
-        Q.set([x, b.y1 + lr * .5, z, ox * v, rng() * v * .4, oz * v, -off], i * 7); };
-      fill.spillReach = (off + hcFull / k) / objSize;
-    } else {                                              // 'door' or 'burst': one cone-shaped pile at an outlet
-      const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]), dx = ov.dir[0] / dl, dz = ov.dir[1] / dl;
-      hcap = Math.min(objSize * .4, Math.max(b.y1, objSize * .18)); hcFull = Math.min(hcap, Math.cbrt(3 * Es / (4 * Math.PI)));
-      const R0 = 4.2 * hcap, cx0 = at.x + dx * hcap, cz0 = at.z + dz * hcap; ssp = Math.max(sp, Math.sqrt(Math.PI * R0 * R0 / SPILL_CAP));
-      const bx = new THREE.Box3().copy(objBox).expandByScalar(ssp * .3);
-      for (let z = cz0 - R0, row = 0; z <= cz0 + R0; z += ssp * .866, row++) for (let x = cx0 - R0 + (row % 2) * ssp * .5; x <= cx0 + R0; x += ssp) {
-        const jx = x + (rng() - .5) * ssp * .3, jz = z + (rng() - .5) * ssp * .3;
-        if (Math.hypot(jx - cx0, jz - cz0) > R0 || (jx > bx.min.x && jx < bx.max.x && jz > bx.min.z && jz < bx.max.z)) continue;
-        cand.push({ x: jx, z: jz, s: .82 + rng() * .3, jy: (rng() - .5) * .3 });
+      // velocities, friction, sleeping
+      for (let i = 0; i < n; i++) { if (!awake[i]) continue;
+        vx[i] = (px[i] - qx[i]) / h; vy[i] = (py[i] - qy[i]) / h; vz[i] = (pz[i] - qz[i]) / h;
+        { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = pm[i] + .3 * Math.sqrt(g * rad[i]);  // pushes never add energy
+          if (sp > cap) { const f = cap / sp; vx[i] *= f; vy[i] *= f; vz[i] *= f; } }
+        if (con[i]) { vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= damp; }
+        if (sup[i]) { vx[i] *= sdamp; vy[i] *= sdamp; vz[i] *= sdamp;
+          if (!landed[i]) { landed[i] = 1; if (plopBudget > 0) { plopBudget--; plop(.75 + rng() * .5, .1); } } }
+        const sp2 = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i], thr = .25 * Math.sqrt(g * rad[i]);
+        if (sup[i] >= 2 && sp2 < thr * thr) { still[i] += h; if (still[i] > .18 && !out[i]) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; } } else still[i] = 0;
+        if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; }
       }
-      let hcNow = 0;
-      const coneAt = (x, z, hc) => hc - .5 * Math.hypot(x - (at.x + dx * hc), z - (at.z + dz * hc));
-      heightAt = (c, hc) => coneAt(c.x, c.z, hc);
-      grow = o => (hcNow = hcFull * Math.cbrt(o));
-      spawnOut = i => { const v = Math.sqrt(objSize) * (.9 + rng() * .8), s = (rng() - .5) * .7;
-        Q.set([at.x + (rng() - .5) * (ov.w || .4) * Math.abs(dz), at.y + rng() * (ov.h || .5), at.z + (rng() - .5) * (ov.w || .4) * Math.abs(dx),
-          (dx - dz * s) * v, rng() * v * .3, (dz + dx * s) * v, 0], i * 7); };
-      fill.spillReach = (3 * hcFull) / objSize;
-      fill.spillGround = (x, z) => Math.max(0, coneAt(x, z, hcNow));
     }
-    const plr = ssp * .75;
-    const slumps = new THREE.InstancedMesh(SCOOP_LUMP, scoopMat, Math.max(1, cand.length)); slumps.receiveShadow = true;
-    cand.forEach(c => { c.col = randColor(rng); }); const pPack = packer(slumps, dummy); slumps.count = 0;
-    const srot = cand.map(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng() * 6.28, (rng() - .5) * .5)));
-    group.add(slumps);
-    let hc = 0, acc = 0, nxt = 0;
-    const drawPile = () => {
-      for (let i = 0; i < cand.length; i++) { const c = cand[i], h = ov.type === 'rim' ? heightAt(c.dd, hc) : heightAt(c, hc);
-        if (h > plr * .2) pPack.put(c.x, h - plr * .35 + c.jy * plr, c.z, plr * c.s, srot[i], c.col); }
-      pPack.end();
-    };
-    spill = {
-      update(dt, o, pouring) {
-        hc = grow(o); drawPile();
-        if (pouring) { acc += dt * S2 / .7; while (acc >= 1) { acc--; spawnOut(nxt); nxt = (nxt + 1) % S2; } }
-        let alive = 0; const g = 9.8 * Math.max(1, objSize / 6);
-        for (let i = 0; i < S2; i++) { const o7 = i * 7; if (Q[o7 + 1] < -1e8) continue;
-          Q[o7 + 4] -= g * dt; Q[o7] += Q[o7 + 3] * dt; Q[o7 + 1] += Q[o7 + 4] * dt; Q[o7 + 2] += Q[o7 + 5] * dt; Q[o7 + 6] += Math.hypot(Q[o7 + 3], Q[o7 + 5]) * dt;
-          const ground = ov.type === 'rim' ? Math.max(0, heightAt(Q[o7 + 6], hc)) : fill.spillGround(Q[o7], Q[o7 + 2]);
-          if (Q[o7 + 4] < 0 && Q[o7 + 1] <= ground + br) Q[o7 + 1] = -1e9; else alive++; }
-        for (let i = 0; i < S2; i++) { const o7 = i * 7; if (Q[o7 + 1] > -1e8) sPack.put(Q[o7], Q[o7 + 1], Q[o7 + 2], br, null, sCol[i]); }
-        sPack.end();
-        if (ov.open) ov.open(smooth(0, .25, o));
-        return alive;
-      },
-      finish() { hc = grow(1); drawPile(); for (let i = 0; i < S2; i++) Q[i * 7 + 1] = -1e9; this.update(0, 1, false); },
-    };
-  }
-  const overT = t => clamp((t - D1) / D2, 0, 1);
+  };
+  const anyAwake = () => { for (let i = 0; i < n; i++) if (awake[i]) return true; return false; };
+  const draw = dt => {
+    const tq = new THREE.Quaternion(), ax = new V3();
+    for (let i = 0; i < n; i++) { if (!alive[i]) continue;
+      if (awake[i]) { const vh = Math.hypot(vx[i], vz[i]); if (vh > 1e-4) { ax.set(vz[i] / vh, 0, -vx[i] / vh); tq.setFromAxisAngle(ax, vh * dt / rad[i]); quats[i].premultiply(tq); } }
+      pack.put(px[i], py[i], pz[i], rad[i] * scl[i], quats[i], cols[i]); }
+    pack.end();
+  };
 
-  if (mode === 'small') {
-    const nIn = Math.min(answer, Math.round(guess));
-    // grid spacing chosen so exactly `answer` scoops fit the interior (soft scoops squish together)
-    let s = Math.cbrt(Vvis / answer), pts = [];
-    for (let iter = 0; iter < 24; iter++) {
-      pts = []; const ins = s * .3;
-      for (let y = b.y0 + s * .5; y < b.y1; y += s * .9) for (let x = b.minX + s * .5; x < b.maxX; x += s) for (let z = b.minZ + s * .5; z < b.maxZ; z += s) {
-        const jx = x + (rng() - .5) * s * .2, jz = z + (rng() - .5) * s * .2;
-        if (inside(jx, jz, y) && inside(jx + ins, jz, y) && inside(jx - ins, jz, y) && inside(jx, jz + ins, y) && inside(jx, jz - ins, y)) pts.push([jx, y + (rng() - .5) * s * .15, jz]);
+  // ---- timeline ----
+  const P = { group, phase: 'your', count: 0, done: false, extent: footR, hole: 0 };
+  let t = 0, phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0;
+  const startA = () => { const s = schedule(guess, .15, true); lastSpawnT = .15 + s.dur; };
+  startA();
+  const settled = () => qi >= queue.length && (!anyAwake() || t - lastSpawnT > 2.6) && t - lastSpawnT > .5;
+  P.update = dt => {
+    dt = Math.min(dt, 1 / 30); t += dt; pt += dt; plopBudget = Math.min(plopBudget + dt * 22, 3);
+    if (n === 0 || qi < queue.length) rebuildHash();
+    while (qi < queue.length && queue[qi].t <= t) { const q = queue[qi++]; spawn(q); if (phase === 'A') P.count += q.scoops; }
+    if (doorOpen && doorT < 1) { doorT = Math.min(1, doorT + dt / .45); ov.open && ov.open(easeInOutSine(doorT)); }
+    if (anyAwake()) step(dt);
+    if (phase === 'A' && settled()) { pt = 0;
+      if (guess < answer) { phase = 'B'; const s = schedule(answer - guess, t + .4, false); lastSpawnT = t + .4 + s.dur; }
+      else if (guess > answer) { phase = 'cut'; cutT = 0; }
+      else phase = 'reveal'; }
+    else if (phase === 'B' && settled()) { phase = 'tidy'; pt = 0;   // strays that rolled off onto the floor shrink away
+      for (let i = 0; i < n; i++) if (alive[i] && !inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3))) out[i] = 1; }
+    else if (phase === 'tidy') { const k = clamp(pt / .45, 0, 1);
+      for (let i = 0; i < n; i++) if (out[i] && alive[i]) { scl[i] = 1 - easeInOutSine(k); if (k >= 1) { alive[i] = 0; awake[i] = 0; } }
+      if (k >= 1) { phase = 'reveal'; pt = 0; } }
+    else if (phase === 'cut') {
+      cutT += dt;
+      if (!holeOn) {
+        let far = footR * 1.08;
+        for (let i = 0; i < n; i++) if (alive[i] && !inside(px[i], pz[i], py[i])) { out[i] = 1; awake[i] = 1; still[i] = 0;
+          const dx = px[i] - cx, dz = pz[i] - cz, dl = Math.hypot(dx, dz) || 1, v = Math.sqrt(g * rad[i]) * 1.2;
+          vx[i] += dx / dl * v; vz[i] += dz / dl * v; far = Math.max(far, dl + rad[i] * 2.5); }
+        holeMax = far; holeOn = true; cut.visible = true; hooks.cutStart && hooks.cutStart(); plop(.45, .25);
       }
-      if (pts.length >= answer) break; s *= .96;
+      const T1 = reduceMotion ? .3 : .7, T2 = reduceMotion ? 1.2 : 2.0, T3 = reduceMotion ? .3 : .7;
+      if (cutT < T1) setHole(lerp(footR * .9, holeMax, easeInOutCubic(cutT / T1)));
+      else if (cutT < T1 + T2) setHole(holeMax);
+      else if (cutT < T1 + T2 + T3) { const k = (cutT - T1 - T2) / T3; setHole(lerp(holeMax, footR * .9, easeInOutCubic(k)));
+        for (let i = 0; i < n; i++) if (alive[i] && out[i] && py[i] > -rad[i]) scl[i] = 1 - k; }
+      else { for (let i = 0; i < n; i++) if (out[i]) { alive[i] = 0; awake[i] = 0; } holeOn = false; cut.visible = false; hooks.cutEnd && hooks.cutEnd(); phase = 'reveal'; pt = 0; }
+      P.hole = holeOn ? holeR : 0;
     }
-    pts.sort((p, q) => p[1] - q[1] + (rng() - .5) * s * .4);
-    pts = pts.slice(0, nIn); while (pts.length < nIn) pts.push(pts[pts.length - 1] || [0, b.y0 + SCOOP_R, 0]);
-    const im = new THREE.InstancedMesh(SCOOP_MID, scoopMat, Math.max(1, nIn)); im.castShadow = true; im.receiveShadow = true;
-    const drops = pts.map((p, i) => ({ p, t0: (i / Math.max(1, nIn)) * D1 * .82, axis: new V3(rng() - .5, rng() - .5, rng() - .5).normalize(), spin: 2 + rng() * 4, landed: false }));
-    for (let i = 0; i < nIn; i++) { im.setColorAt(i, col.set(FLAVORS[pickFlavor(rng)])); dummy.scale.setScalar(0); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); }
-    group.add(im);
-    const dropH = H + objSize * .4, fallT = .5;
-    fill.update = dt => {
-      fill.t += dt; let landed = 0;
-      for (let i = 0; i < nIn; i++) {
-        const d = drops[i], k = (fill.t - d.t0) / fallT;
-        if (k < 0) { dummy.scale.setScalar(0); }
-        else { const e = k >= 1 ? 1 : easeOutBounce(k); dummy.position.set(d.p[0], d.p[1] + dropH * (1 - e), d.p[2]);
-          dummy.quaternion.setFromAxisAngle(d.axis, (1 - e) * d.spin); dummy.scale.setScalar(SCOOP_R);
-          if (k >= 1) { landed++; if (!d.landed) { d.landed = true; if (i % Math.max(1, nIn / 40 | 0) === 0) plop(.8 + rng() * .5, .15); } } }
-        dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
-      }
-      im.instanceMatrix.needsUpdate = true;
-      fill.count = landed; fill.level = levelAt(landed / answer);
-      let alive = 0;
-      if (spill && landed >= nIn) { const o = overT(fill.t); alive = spill.update(dt, o, o < 1); fill.count = Math.round(answer + (guess - answer) * o); fill.overflowing = o; }
-      if (landed >= nIn && (!spill || (overT(fill.t) >= 1 && alive === 0))) fill.done = true;
-    };
-    fill.finish = () => { fill.t = 1e9; fill.update(0); if (spill) spill.finish(); fill.count = guess; fill.done = true; };
-    return fill;
-  }
-
-  // ---- medium & huge: clipped solid + heaped packed-scoop surface + falling stream ----
-  // The surface is a few soft mounds under drifting pour spots, raised and lowered around
-  // the fill level so the volume always matches.
-  const solidGeo = worldUV(spec.solid.clone(), sp * 7);
-  const solid = new THREE.Mesh(solidGeo, fillMat); solid.receiveShadow = true; group.add(solid);
-  const cands = [], testYs = [0, .25, .5, .75, 1].map(f => lerp(b.y0 + 1e-3, b.y1 - 1e-3, f));
-  for (let z = b.minZ + sp * .4, row = 0; z <= b.maxZ; z += sp * .866, row++) for (let x = b.minX + (row % 2 ? sp * .5 : 0) + sp * .3; x <= b.maxX; x += sp) {
-    const jx = x + (rng() - .5) * sp * .25, jz = z + (rng() - .5) * sp * .25;
-    if (testYs.some(y => inside(jx, jz, y))) cands.push({ x: jx, z: jz, jy: (rng() - .5) * lr * .3, s: .82 + rng() * .3, top: inside(jx, jz, b.y1 - 1e-3) });
-  }
-  while (cands.length > LUMP_CAP * 1.3) cands.splice(rng() * cands.length | 0, 1);
-  const lumps = new THREE.InstancedMesh(SCOOP_LUMP, scoopMat, Math.max(1, cands.length));
-  lumps.receiveShadow = true; lumps.castShadow = false;
-  cands.forEach(c => { c.col = randColor(rng); }); const lPack = packer(lumps, dummy);
-  const lumpRot = cands.map(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng() * 6.28, (rng() - .5) * .5)));
-  group.add(lumps);
-
-  const nPour = huge ? 3 : clamp(Math.round(side / (objSize * .2)), 1, 3);
-  const pours = Array.from({ length: nPour }, () => { const [x, z] = randInside(b.y1 - 1e-3); return { x, z, tx: x, tz: z, wait: 0 }; });
-  const sig2 = 2 * (side * (nPour > 1 ? .26 : .34)) ** 2, ampMax = Math.min(H * .45, side * .2);
-  const domeMax = (spec.overflow || { type: 'rim' }).type === 'rim' ? Math.min(H * .5, side * .12) : 0; // heap above the rim when overflowing
-  const mound = (x, z) => { let m = 0; for (const p of pours) m += Math.exp(-((x - p.x) ** 2 + (z - p.z) ** 2) / sig2); return Math.min(1, m); };
-  let amp = 0, meanM = 0, dome = 0;
-  const surfaceAt = (x, z, level) => Math.min(level + amp * (mound(x, z) - meanM), b.y1) + (dome ? dome * mound(x, z) : 0);
-  const ins = lr * .35, mvals = new Float32Array(cands.length);
-  const setLevel = (level, a, dm = 0) => {
-    amp = a; dome = dm; let sum = 0, n = 0;
-    for (let i = 0; i < cands.length; i++) { const m = mound(cands[i].x, cands[i].z); mvals[i] = m; if (cands[i].top) { sum += m; n++; } }
-    meanM = n ? sum / n : 0;
-    fillPlane.constant = Math.max(b.y0, level - amp * meanM);
-    for (let i = 0; i < cands.length; i++) {
-      const c = cands[i], base = Math.min(level + amp * (mvals[i] - meanM), b.y1), y = base + dome * (.35 + .65 * mvals[i]) * (c.top ? 1 : 0), ty = base - lr * .05;
-      const ok = base > b.y0 + lr * .15 && inside(c.x, c.z, ty) && inside(c.x + ins, c.z, ty) && inside(c.x - ins, c.z, ty) && inside(c.x, c.z + ins, ty) && inside(c.x, c.z - ins, ty);
-      if (ok) lPack.put(c.x, y - lr * .3 + c.jy, c.z, lr * c.s, lumpRot[i], c.col);
-    }
-    lPack.end();
+    if (phase === 'reveal' && !P.done) { P.done = true; P.phase = 'real'; }
+    extentT -= dt; if (extentT <= 0) { extentT = .25; let e = footR;
+      for (let i = 0; i < n; i++) if (alive[i] && py[i] > -rad[i]) e = Math.max(e, Math.hypot(px[i] - cx, pz[i] - cz) + rad[i]); P.extent = e; }
+    draw(dt);
   };
-  setLevel(b.y0, 0);
-
-  const S = huge ? (isMobile ? 700 : 1100) : 260;
-  const balls = new THREE.InstancedMesh(SCOOP_LOW, scoopMat, S); balls.frustumCulled = false;
-  const bCol = Array.from({ length: S }, () => randColor(rng)), bPack = packer(balls, dummy);
-  group.add(balls);
-  const spawnY = b.y1 + H * .5 + objSize * .18, fallT = huge ? .6 : .55, grav = 2 * (spawnY - b.y0) / (fallT * fallT);
-  const P = new Float32Array(S * 4); for (let i = 0; i < S; i++) P[i * 4 + 1] = -1e9; // x, y, z, vy
-  const spread = side * (huge ? .16 : .07);
-  let spawnAcc = 0, next = 0, plopT = 0;
-  const spawn = i => {
-    let x, z, ok = false;
-    if (!huge || rng() < .75) { const p = pours[i % pours.length];
-      for (let k = 0; k < 4 && !ok; k++) { x = p.x + (rng() + rng() - 1) * spread; z = p.z + (rng() + rng() - 1) * spread; ok = inside(x, z, b.y1 - 1e-3); } }
-    if (!ok) [x, z] = randInside(b.y1 - 1e-3);
-    P[i * 4] = x; P[i * 4 + 1] = spawnY + rng() * H * .3; P[i * 4 + 2] = z; P[i * 4 + 3] = -rng() * grav * .1;
+  /* Skip straight to the end state: the object filled with the real amount */
+  P.finishInstant = () => {
+    const ratio = Math.max(1, Math.ceil(answer / MAX_BALLS)), nb = Math.ceil(answer / ratio), r = rFor(ratio);
+    let s = Math.cbrt(Vvis / nb), pts = [];
+    for (let iter = 0; iter < 20; iter++) { pts = [];
+      for (let y = b.y0 + r; y < b.y1; y += s) for (let x = b.minX + s * .5; x < b.maxX; x += s) for (let z = b.minZ + s * .5; z < b.maxZ; z += s) {
+        const jx = x + (rng() - .5) * s * .15, jz = z + (rng() - .5) * s * .15; if (inside(jx, jz, y) && sample(jx, y, jz) > r * .8) pts.push([jx, y, jz]); }
+      if (pts.length >= nb) break; s *= .95; }
+    pts.sort((a, c) => a[1] - c[1]); pts.slice(0, nb).forEach(([x, y, z]) => addBall(x, y, z, r, 0, 0, 0, true));
+    queue.length = 0; qi = 0; P.count = guess; phase = 'reveal'; P.done = true; P.phase = 'real'; draw(0);
   };
-  const drawBalls = () => {
-    for (let i = 0; i < S; i++) if (P[i * 4 + 1] > -1e8) bPack.put(P[i * 4], P[i * 4 + 1], P[i * 4 + 2], br, null, bCol[i]);
-    bPack.end();
-  };
-  drawBalls();
-  fill.update = dt => {
-    fill.t += dt;
-    const k = clamp(fill.t / D1, 0, 1), o = over ? overT(fill.t) : 0, pouring = fill.t < D1 + D2;
-    const f = over ? Math.pow(k, 1.25) : fEnd * easeInOutSine(k);
-    for (const p of pours) { p.wait -= dt; if (p.wait <= 0) { [p.tx, p.tz] = randInside(b.y1 - 1e-3); p.wait = 1.1 + rng() * 1.1; } const e = 1 - Math.exp(-dt * 1.2); p.x = lerp(p.x, p.tx, e); p.z = lerp(p.z, p.tz, e); }
-    fill.fraction = f; fill.level = levelAt(f);
-    fill.count = Math.round(over && fill.t > D1 ? answer + (guess - answer) * o : answer * f);
-    const a = ampMax * Math.min(1, f * 5) * (1 - smooth(.62, 1, f));
-    setLevel(fill.level, a, over ? domeMax * smooth(0, .35, o) : 0);
-    if (pouring) { spawnAcc += dt * S / fallT * .95; while (spawnAcc >= 1) { spawnAcc--; spawn(next); next = (next + 1) % S; } }
-    let alive = 0;
-    for (let i = 0; i < S; i++) { const o4 = i * 4; if (P[o4 + 1] < -1e8) continue;
-      P[o4 + 3] -= grav * dt; P[o4 + 1] += P[o4 + 3] * dt;
-      if (P[o4 + 1] <= Math.max(b.y0, surfaceAt(P[o4], P[o4 + 2], fill.level)) + lr * .3) P[o4 + 1] = -1e9; else alive++; }
-    drawBalls();
-    if (spill && fill.t > D1) { alive += spill.update(dt, o, o < 1); fill.overflowing = o; }
-    plopT -= dt; if (pouring && plopT <= 0) { plop(.7 + rng() * .6, .12); plopT = huge ? .05 + rng() * .05 : .08 + rng() * .1; }
-    if (!pouring && alive === 0) fill.done = true;
-  };
-  fill.finish = () => {
-    fill.t = D1 + D2; fill.count = guess; fill.level = levelAt(fEnd);
-    setLevel(fill.level, over ? 0 : ampMax * Math.min(1, fEnd * 5) * (1 - smooth(.62, 1, fEnd)), over ? domeMax : 0);
-    for (let i = 0; i < S; i++) P[i * 4 + 1] = -1e9; drawBalls(); if (spill) { spill.finish(); fill.overflowing = 1; } fill.done = true;
-  };
-  return fill;
+  P.dispose = () => { mesh.dispose(); occl.geometry.dispose(); occl.material.dispose(); pit.geometry.dispose(); pitM.dispose(); pitFloor.geometry.dispose(); pitFloor.material.dispose();
+    island.geometry.dispose(); island.material.forEach(m => m.dispose()); if (ov) ov.holeOpen = false; };
+  return P;
 }
 
 /* ===================== camera ===================== */
@@ -1125,9 +1141,9 @@ scene.add(blob);
 
 function disposeRound() {
   if (!R) return;
-  scene.remove(R.model.group); if (R.fill) scene.remove(R.fill.group);
+  scene.remove(R.model.group); if (R.pour) { scene.remove(R.pour.group); R.pour.dispose(); } ground.visible = true;
   const kill = o => o.traverse(n => { if (n.geometry && !n.geometry.userData.keep) n.geometry.dispose(); if (n.isInstancedMesh) n.dispose(); if (n.userData.ownMat) n.material.dispose(); });
-  kill(R.model.group); if (R.fill) kill(R.fill.group);
+  kill(R.model.group);
   R = null;
 }
 
@@ -1157,7 +1173,7 @@ function setupRound(idx) {
   const sc = sun.shadow.camera; sc.left = sc.bottom = -objSize * .85; sc.right = sc.top = objSize * .85; sc.near = L * .3; sc.far = L * 3; sc.updateProjectionMatrix();
   sun.shadow.normalBias = objSize * .0012;
   ground.scale.setScalar(objSize * 40); ground.position.set(center.x, 0, center.z);
-  controls.minDistance = sphere.radius * .35; controls.maxDistance = view.dist * 2.2; controls.target.copy(target);
+  controls.minDistance = sphere.radius * .35; controls.maxDistance = view.dist * 2.2; controls.target.copy(target); controls.enableZoom = true;
   const rng = mulberry32(xmur3(TODAY + obj.id)());
   R = { idx, obj, answer, model, size, center, box, objSize, view, rng, sPos, fill: null, line: null, guess: null, minD: sphere.radius * .35, scoopZoom: false };
   return R;
@@ -1169,7 +1185,7 @@ function introView() {
 }
 
 /* ===================== UI ===================== */
-const ui = { q: $('question'), qwrap: $('qwrap'), form: $('guessForm'), gin: $('gin'), submit: $('bSubmit'), counter: $('counter'), cnum: $('cnum'),
+const ui = { q: $('question'), qwrap: $('qwrap'), form: $('guessForm'), gin: $('gin'), submit: $('bSubmit'), counter: $('counter'), cnum: $('cnum'), cnumReal: $('cnumReal'),
   card: $('card'), reset: $('bReset'), results: $('bResults'), scoopTag: $('scoopTag'), line: $('scoopLine'), dot: $('scoopDot') };
 $('pnum').textContent = `No. ${PUZZLE_NO}`;
 function renderProgress(cur) {
@@ -1225,7 +1241,7 @@ function startRound(idx) {
   setQuestion(R.obj); renderProgress(idx);
   ui.qwrap.classList.remove('away'); hideCard();
   ui.form.className = 'off'; ui.gin.disabled = true; ui.gin.value = ''; guessDigits = ''; ui.submit.disabled = true;
-  ui.counter.classList.remove('show'); ui.reset.classList.remove('show'); ui.results.classList.remove('show');
+  ui.counter.className = ''; ui.reset.classList.remove('show'); ui.results.classList.remove('show');
   controls.enabled = false;
   Object.assign(camS, introView(), { target: introView().target }); applyCam();
   tweenCam(R.view, INTRO_DUR, { exp: true, intro: true, ease: t => easeInOutCubic(smooth(0, 1, t * 1.08 - .04)), done: () => {
@@ -1245,45 +1261,55 @@ function submitGuess() {
   state = 'fill'; ui.gin.blur(); lockCam(); camTween = null;
   if (R.scoopZoom) { R.scoopZoom = false; setOrbitLimits(false); }
   ui.form.className = 'gone'; ui.reset.classList.remove('show'); ui.qwrap.classList.add('away');
-  ui.cnum.textContent = '0'; ui.counter.classList.add('show');
+  ui.cnum.textContent = '0'; ui.cnumReal.textContent = fmt(R.answer); ui.counter.className = 'show';
   beginFill(false);
 }
 
 function beginFill(instant) {
   const spec = R.model.fill, b = spec.bounds;
-  if (R.model.closed && !spec.overflow)   // closed shapes with no door burst out of the side facing the camera
-    spec.overflow = { type: 'burst', at: new V3(R.center.x, lerp(b.y0, b.y1, .4), R.box.max.z), dir: [0, 1] };
-  R.fill = makeFill(spec, R.answer, R.guess, R.objSize, R.box, R.rng); scene.add(R.fill.group);
+  if (R.model.closed && !spec.overflow)   // closed shapes with no door break open on the side facing the camera
+    spec.overflow = { type: 'burst', hole: true, at: new V3(R.center.x, lerp(b.y0, b.y1, .3), b.maxZ), dir: [0, 1], w: Math.min(b.maxX - b.minX, H0(b)) * .3, h: H0(b) * .2 };
   const shells = []; R.model.group.traverse(n => n.userData.shell && shells.push(n));
-  R.shells = shells; R.shellT = 0;
-  if (instant) { R.fill.finish(); setShellOpacity(R.model.closed ? .28 : 1); if (R.fill.over && R.model.closed) setShellOpacity(1, true); return; }
-  const top = new V3((b.minX + b.maxX) / 2, lerp(b.y0, b.y1, .45), (b.minZ + b.maxZ) / 2);
-  const fv = { target: top, dist: R.view.dist, polar: R.model.closed ? .66 : .78, az: camS.az };
-  R.fillDist = fv.dist;
-  tweenCam(fv, CAM_FILL_DUR, { done: () => { R.pouring = true; fillTone(FILL_DUR); } });
+  R.shells = shells; R.shellT = 0; R.doorT = -1; R.revealT = -1;
+  const hooks = { doorOpened: () => { R.doorT = 0; }, cutStart: () => { ground.visible = false; plop(.5, .25); }, cutEnd: () => { ground.visible = true; } };
+  R.pour = makePour(R.model, R.answer, R.guess, R.objSize, R.box, R.rng, hooks); scene.add(R.pour.group);
+  if (instant) { R.pour.finishInstant(); setShellOpacity(R.model.closed ? .28 : 1); return; }
+  // ease up to a raised view, then let the player orbit (no zoom) around the object while it fills
+  const c = new V3((b.minX + b.maxX) / 2, lerp(b.y0, b.y1, .45), (b.minZ + b.maxZ) / 2);
+  const fv = { target: c, dist: R.view.dist, polar: R.model.closed ? .7 : .8, az: camS.az };
+  R.fillDist = fv.dist; R.pouring = false;
+  tweenCam(fv, CAM_FILL_DUR, { done: () => { R.pouring = true; controls.enableZoom = false; controls.minDistance = 0; controls.maxDistance = Infinity; unlockCam(); fillTone(3.5); } });
 }
+const H0 = b => b.y1 - b.y0;
 function setShellOpacity(o, doorsOnly = false) { for (const m of R.shells) { if (doorsOnly && !m.userData.door) continue; const t = o < .999, mt = m.material;
   if (mt.transparent !== t) { mt.transparent = t; mt.depthWrite = !t; mt.needsUpdate = true; } // recompile: opaque shaders force alpha = 1
   mt.opacity = o; m.castShadow = o > .6; } }
 
 let lastCount = 0, tickT = 0;
 function updateFill(dt) {
-  if (!R || !R.fill || state !== 'fill') return;
-  if (R.model.closed && R.shellT < 1) { R.shellT = Math.min(1, R.shellT + dt / .7); setShellOpacity(lerp(1, .28, easeInOutSine(R.shellT))); }
-  if (!R.pouring) return;
-  R.fill.update(dt);
-  ui.cnum.textContent = fmt(R.fill.count);
-  if (R.fill.overflowing != null) {        // pull back so the spill stays in view
-    camS.dist = R.fillDist * (1 + .55 * Math.min(1.3, R.fill.spillReach) * smooth(0, .7, R.fill.overflowing)); applyCam();
-    if (R.model.closed) setShellOpacity(lerp(.28, 1, smooth(0, .15, R.fill.overflowing)), true); }
-  tickT -= dt; if (R.fill.count !== lastCount && tickT <= 0) { tick(); tickT = .07; } lastCount = R.fill.count;
-  if (R.fill.done) finishFill();
+  if (!R || !R.pour) return;
+  if (state === 'fill' && R.model.closed && R.shellT < 1) { R.shellT = Math.min(1, R.shellT + dt / .7); setShellOpacity(lerp(1, .28, easeInOutSine(R.shellT))); }
+  if (state === 'fill' && !R.pouring) return;
+  R.pour.update(dt);                       // keeps settling after the round too
+  if (state !== 'fill') return;
+  if (R.doorT >= 0 && R.doorT < 1) { R.doorT = Math.min(1, R.doorT + dt / .4); setShellOpacity(lerp(.28, 1, R.doorT), true); }
+  ui.cnum.textContent = fmt(R.pour.count);
+  tickT -= dt; if (R.pour.count !== lastCount && tickT <= 0) { tick(); tickT = .07; } lastCount = R.pour.count;
+  // back the camera off when the pile or the floor hole grows past the view
+  const want = Math.max(R.fillDist, fitDist(Math.max(R.pour.extent, R.pour.hole) * 1.08));
+  const off = cam.position.clone().sub(controls.target), d = off.length();
+  if (d < want - 1e-6) { off.setLength(lerp(d, want, 1 - Math.exp(-dt * 2.5))); cam.position.copy(controls.target).add(off); }
+  if (R.pour.done) {
+    if (R.revealT < 0) { R.revealT = 0; ui.counter.classList.add('real'); chime(R.acc >= 80); }
+    R.revealT += dt; if (R.revealT > (reduceMotion ? .35 : 1.0)) finishFill();
+  }
 }
 function finishFill() {
   R.pouring = false; state = 'result';
-  ui.cnum.textContent = fmt(R.guess);
-  unlockCam(); ui.reset.classList.add('show');
-  showCard(); chime(R.acc >= 80);
+  controls.enableZoom = true; controls.minDistance = R.minD;
+  controls.maxDistance = Math.max(R.view.dist * 2.2, cam.position.distanceTo(controls.target) * 1.4);
+  ui.reset.classList.add('show');
+  showCard();
   if (R.acc >= 95) { confetti(); }
 }
 
@@ -1293,7 +1319,6 @@ function showCard() {
   $('rGuess').textContent = fmt(guess); $('rAns').textContent = fmt(answer); $('rFact').textContent = obj.fact;
   $('bNext').textContent = idx < DAILY.length - 1 ? 'Next' : 'See score';
   $('stamp').className = 'stamp' + (acc >= 95 ? ' show' : '');
-  setTimeout(() => ui.counter.classList.remove('show'), 300);
   ui.card.className = 'pe show'; renderProgress(idx + 1);
 }
 function hideCard() { if (ui.card.classList.contains('show')) { ui.card.className = 'pe hide'; } }
@@ -1420,7 +1445,6 @@ function boot() {
     setupRound(i); setQuestion(R.obj); renderProgress(DAILY.length);
     R.guess = r.guess; R.acc = r.acc; beginFill(true);
     Object.assign(camS, R.view); camS.target = R.view.target.clone();
-    if (R.fill.over) camS.dist *= 1 + .55 * Math.min(1.3, R.fill.spillReach);
     applyCam(); unlockCam();
     state = 'done'; ui.form.className = 'gone'; ui.qwrap.classList.add('away'); ui.reset.classList.add('show'); ui.results.classList.add('show');
     openEnd(); return;
