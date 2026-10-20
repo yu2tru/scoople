@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>scoople</title>
+<meta name="description" content="How many scoops of ice cream would fill it? A daily estimation game.">
+<meta name="theme-color" content="#F7DCC8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Swap the game font in one line */
+  --font: "Nunito", ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Flat background + ground color */
+  --bg: #F7DCC8;
+  --ink: #1d1a19;
+  --muted: #9a8a82;
+  --card: #fffaf6;
+  --chip: rgba(255,255,255,.55);
+  --chip-border: rgba(29,26,25,.08);
+  --t-good: #F08FAB;   /* 🍨 80%+ */
+  --t-mid:  #F4BC5B;   /* 🍦 50–79% */
+  --t-low:  #8EC6E6;   /* 🧊 below 50% */
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden;overscroll-behavior:none}
+body{position:fixed;inset:0;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none}
+button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+#lines{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.tag{position:fixed;left:0;top:0;pointer-events:none;font-weight:900;font-size:13px;letter-spacing:-.02em;
+  background:var(--ink);color:#fff;padding:5px 10px;border-radius:999px;white-space:nowrap;opacity:0;transition:opacity .3s;will-change:transform}
+.tag.show{opacity:1}
+.tag.guess{background:#fff;color:var(--ink);box-shadow:0 2px 0 rgba(0,0,0,.08)}
+
+#app{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(480px,100%);
+  display:flex;flex-direction:column;pointer-events:none;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+#app .pe,#app button,#app input{pointer-events:auto}
+header{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 4px 16px;height:56px}
+.brand{display:flex;align-items:baseline;gap:7px}
+.word{font-weight:900;font-size:30px;letter-spacing:-.06em;line-height:1}
+.num{font-weight:800;font-size:14px;color:var(--muted);letter-spacing:-.02em}
+.icons{display:flex;gap:2px}
+.ibtn{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;transition:background .15s,transform .1s}
+.ibtn:hover{background:var(--chip)}
+.ibtn:active{transform:scale(.92)}
+.ibtn svg{width:24px;height:24px}
+.progress{display:flex;gap:6px;padding:4px 16px 0}
+.progress i{flex:1;height:8px;border-radius:99px;background:rgba(29,26,25,.09);transition:background .4s, box-shadow .4s}
+.progress i.cur{background:rgba(29,26,25,.32)}
+.progress i.good{background:var(--t-good)} .progress i.mid{background:var(--t-mid)} .progress i.low{background:var(--t-low)}
+#qwrap{text-align:center;padding:14px 18px 0;transition:opacity .35s, transform .35s}
+#qwrap.away{opacity:0;transform:translateY(-12px)}
+#question{margin:0;font-weight:900;font-size:clamp(23px,6.6vw,30px);line-height:1.04;letter-spacing:-.045em}
+#question em{font-style:normal;color:#d9577c}
+.sub{display:inline-block;margin-top:9px;font-weight:800;font-size:12.5px;color:#6f625c;letter-spacing:-.01em}
+.chip{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 16px;border-radius:999px;background:var(--chip);
+  border:1px solid var(--chip-border);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-weight:800;font-size:14px;letter-spacing:-.02em;transition:transform .1s,opacity .3s}
+.chip:active{transform:scale(.96)}
+.chip.sm{height:30px;padding:0 12px;font-size:12.5px}
+.spacer{flex:1}
+#bottom{padding:0 14px 14px;display:flex;flex-direction:column;gap:10px}
+.chiprow{display:flex;justify-content:flex-end;gap:8px;min-height:44px}
+.chiprow .chip{opacity:0;pointer-events:none}
+.chiprow .chip.show{opacity:1;pointer-events:auto}
+#guessForm{display:flex;gap:8px;transition:opacity .35s, transform .35s}
+#guessForm.off{opacity:.45}
+#guessForm.gone{opacity:0;transform:translateY(20px);pointer-events:none}
+#guessForm.gone *{pointer-events:none!important}
+#gin{flex:1;min-width:0;height:58px;border-radius:999px;border:2px solid transparent;background:#fff;font-family:var(--font);
+  font-weight:900;font-size:24px;letter-spacing:-.03em;text-align:center;color:var(--ink);outline:none;box-shadow:0 3px 0 rgba(29,26,25,.07);transition:border-color .15s}
+#gin:focus{border-color:var(--ink)}
+#gin::placeholder{color:#c9bab2;font-weight:800}
+.pill{height:58px;padding:0 24px;border-radius:999px;background:var(--ink);color:#fff;font-weight:900;font-size:18px;letter-spacing:-.02em;
+  transition:transform .1s, opacity .2s}
+.pill:active{transform:scale(.96)}
+.pill:disabled{opacity:.28;cursor:default;transform:none}
+.pill.sm{height:46px;padding:0 20px;font-size:16px}
+#counter{text-align:center;display:none;padding-bottom:4px}
+#counter.show{display:block}
+#cnum{display:block;font-weight:900;font-size:clamp(40px,12vw,60px);letter-spacing:-.06em;line-height:1;font-variant-numeric:tabular-nums}
+#counter span{font-weight:800;font-size:15px;color:#6f625c}
+
+/* Result card */
+#card{position:absolute;top:calc(env(safe-area-inset-top) + 58px);left:10px;right:10px;max-height:34vh;overflow:hidden;
+  background:var(--card);border-radius:24px;padding:12px 14px 12px 16px;box-shadow:0 14px 36px rgba(120,60,30,.18),0 2px 0 rgba(0,0,0,.04);
+  transform:translateY(-130%);visibility:hidden}
+#card.show{visibility:visible;animation:drop .75s cubic-bezier(.2,.9,.25,1) forwards}
+#card.hide{visibility:visible;animation:lift .3s ease-in forwards}
+@keyframes drop{0%{transform:translateY(-130%)}55%{transform:translateY(5%)}75%{transform:translateY(-2%)}90%{transform:translateY(.8%)}100%{transform:translateY(0)}}
+@keyframes lift{to{transform:translateY(-130%)}}
+.rc-top{display:flex;align-items:center;gap:12px}
+.acc{font-weight:900;font-size:clamp(48px,15vw,64px);letter-spacing:-.07em;line-height:.9}
+.rc-label b{display:block;font-weight:900;font-size:21px;letter-spacing:-.04em;line-height:1.05}
+.rc-label small{display:block;font-weight:800;font-size:13px;color:var(--muted);margin-top:2px}
+.rc-mid{display:flex;align-items:center;gap:10px;margin-top:8px}
+.rc-nums{flex:1;display:flex;gap:14px;min-width:0}
+.rc-nums div{min-width:0}
+.rc-nums span{display:block;font-weight:800;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.rc-nums b{display:block;font-weight:900;font-size:17px;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fact{margin:8px 0 0;font-weight:700;font-size:12.5px;line-height:1.3;color:#5d514b;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.stamp{position:absolute;right:14px;top:10px;font-weight:900;font-size:16px;letter-spacing:-.02em;color:#e0577f;border:3px solid #e0577f;
+  border-radius:10px;padding:3px 8px;transform:rotate(-12deg);opacity:0;pointer-events:none}
+.stamp.show{animation:stamp .5s .45s cubic-bezier(.3,1.6,.5,1) forwards}
+@keyframes stamp{0%{opacity:0;transform:rotate(-12deg) scale(2.4)}100%{opacity:.92;transform:rotate(-12deg) scale(1)}}
+
+/* Modals */
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(70,35,15,.28);z-index:20;padding:16px}
+.modal.show{display:flex;animation:fade .2s}
+@keyframes fade{from{opacity:0}}
+.sheet{position:relative;width:min(440px,100%);max-height:calc(100% - 20px);overflow:auto;background:var(--card);border-radius:28px;padding:22px 20px 20px;
+  box-shadow:0 20px 50px rgba(90,40,10,.25);animation:pop .3s cubic-bezier(.2,1.3,.4,1)}
+@keyframes pop{from{transform:translateY(16px) scale(.97);opacity:0}}
+.sheet h2{margin:0 0 14px;font-weight:900;font-size:26px;letter-spacing:-.05em}
+.x{position:absolute;right:10px;top:10px;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:22px;font-weight:900}
+.x:hover{background:rgba(0,0,0,.05)}
+.steps{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
+.step{display:flex;gap:12px;align-items:flex-start}
+.step .n{flex:none;width:34px;height:34px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:900}
+.step b{display:block;font-weight:900;font-size:17px;letter-spacing:-.03em}
+.step span{display:block;font-weight:700;font-size:14px;color:#6f625c;line-height:1.35;margin-top:2px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-weight:800;font-size:13px;color:#6f625c;margin:-4px 0 16px}
+.wide{width:100%}
+.statgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center;margin-bottom:12px}
+.statgrid b{display:block;font-weight:900;font-size:26px;letter-spacing:-.05em}
+.statgrid span{display:block;font-weight:800;font-size:11px;color:var(--muted);line-height:1.15}
+.total{text-align:center;margin:-4px 0 6px}
+.total b{font-weight:900;font-size:72px;letter-spacing:-.07em;line-height:1}
+.total span{font-weight:900;font-size:24px;color:var(--muted);letter-spacing:-.04em}
+.emo{text-align:center;font-size:30px;letter-spacing:4px;margin-bottom:12px}
+.rows{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.row{display:flex;align-items:center;gap:10px;background:rgba(29,26,25,.04);border-radius:14px;padding:8px 12px}
+.row .e{font-size:20px}
+.row .nm{flex:1;min-width:0}
+.row .nm b{display:block;font-weight:900;font-size:14.5px;letter-spacing:-.02em}
+.row .nm span{display:block;font-weight:700;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .p{font-weight:900;font-size:20px;letter-spacing:-.04em}
+.next{text-align:center;font-weight:800;font-size:13px;color:var(--muted);margin-top:12px}
+.muted{color:var(--muted);font-weight:700;font-size:14px;text-align:center}
+#toast{position:fixed;left:50%;bottom:110px;transform:translate(-50%,20px);background:var(--ink);color:#fff;font-weight:900;padding:12px 20px;border-radius:999px;
+  opacity:0;transition:.25s;z-index:30;pointer-events:none}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:15}
+#err{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:30px;font-weight:800}
+@media (prefers-reduced-motion: reduce){
+  #card.show{animation:fade .25s forwards;transform:none}
+  #card.hide{animation:none;visibility:hidden}
+  .stamp.show{animation:none;opacity:.92}
+}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c" aria-label="3D scene"></canvas>
+<svg id="lines"><line id="scoopLine" stroke="#1d1a19" stroke-width="1.5" stroke-linecap="round" opacity="0"/><circle id="scoopDot" r="3" fill="#1d1a19" opacity="0"/></svg>
+<div id="scoopTag" class="tag">1 scoop</div>
+<div id="guessTag" class="tag guess">your guess</div>
+
+<div id="app">
+  <header>
+    <div class="brand"><span class="word">scoople</span><span class="num" id="pnum">No. 1</span></div>
+    <div class="icons">
+      <button class="ibtn" id="bHelp" aria-label="How to play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg></button>
+      <button class="ibtn" id="bStats" aria-label="Statistics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 20v-6M12 20V5M19 20v-10"/></svg></button>
+      <button class="ibtn" id="bSound" aria-label="Toggle sound"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><g id="sOn"><path d="M15.5 9a4.2 4.2 0 0 1 0 6"/><path d="M18.2 6.5a8 8 0 0 1 0 11"/></g><g id="sOff" style="display:none"><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></svg></button>
+    </div>
+  </header>
+  <div class="progress" id="prog"><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="qwrap"><h1 id="question">&nbsp;</h1><div class="sub">1 scoop = ½ cup of ice cream (118 mL)</div></div>
+
+  <div id="card" class="pe" role="status">
+    <div class="stamp" id="stamp">Scoop-tacular!</div>
+    <div class="rc-top"><div class="acc" id="rAcc">0%</div><div class="rc-label"><b id="rLabel">close!</b><small id="rSub"></small></div></div>
+    <div class="rc-mid">
+      <div class="rc-nums"><div><span>your guess</span><b id="rGuess">0</b></div><div><span>answer</span><b id="rAns">0</b></div></div>
+      <button class="pill sm" id="bNext">Next</button>
+    </div>
+    <p class="fact" id="rFact"></p>
+  </div>
+
+  <div class="spacer"></div>
+  <div id="bottom">
+    <div class="chiprow"><button class="chip" id="bResults">results</button><button class="chip" id="bReset">↺ reset view</button></div>
+    <div id="counter"><b id="cnum">0</b><span>scoops</span></div>
+    <form id="guessForm" class="off" autocomplete="off" onsubmit="return false">
+      <input id="gin" type="text" inputmode="numeric" pattern="[0-9,]*" enterkeyhint="done" placeholder="your guess" aria-label="Your guess in scoops" disabled>
+      <button class="pill" id="bSubmit" type="submit" disabled>Submit</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="mHelp" role="dialog" aria-modal="true" aria-labelledby="hT">
+  <div class="sheet">
+    <button class="x" data-close aria-label="Close">×</button>
+    <h2 id="hT">how to play</h2>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><div><b>Meet the scoop</b><span>One scoop is always ½ cup of ice cream. Watch it sit beside today's object at true scale.</span></div></div>
+      <div class="step"><div class="n">2</div><div><b>Guess the scoops</b><span>Spin and zoom around the object, then guess how many scoops it takes to fill it.</span></div></div>
+      <div class="step"><div class="n">3</div><div><b>Watch it fill</b><span>Ice cream pours in to reveal the answer. Score up to 100 per round, 500 per day.</span></div></div>
+    </div>
+    <div class="legend"><span>🍨 80%+</span><span>🍦 50–79%</span><span>🧊 under 50%</span></div>
+    <button class="pill wide" data-close>Let's scoop</button>
+  </div>
+</div>
+
+<div class="modal" id="mStats" role="dialog" aria-modal="true" aria-labelledby="sT">
+  <div class="sheet">
+    <button class="x" data-close aria-label="Close">×</button>
+    <h2 id="sT">statistics</h2>
+    <div class="statgrid" id="statGrid"></div>
+    <div id="statToday" class="muted"></div>
+  </div>
+</div>
+
+<div class="modal" id="mEnd" role="dialog" aria-modal="true" aria-labelledby="eT">
+  <div class="sheet">
+    <button class="x" data-close aria-label="Close">×</button>
+    <h2 id="eT">scoople No. 1</h2>
+    <div class="total"><b id="eTotal">0</b><span>/500</span></div>
+    <div class="emo" id="eEmo"></div>
+    <div class="rows" id="eRows"></div>
+    <div class="statgrid" id="eStats" style="grid-template-columns:repeat(3,1fr)"></div>
+    <button class="pill wide" id="bShare">Share</button>
+    <div class="next" id="eNext"></div>
+  </div>
+</div>
+
+<canvas id="confetti"></canvas>
+<div id="toast"></div>
+<div id="err">This game needs WebGL. Try a newer browser.</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* =====================================================================
+   OBJECTS — the list of things to fill. Add new ones here.
+   volume: interior volume in m³. These are ESTIMATES, not measurements.
+   fact:   one short line shown on the result card.
+   model:  name of a builder in MODELS below. Leave it out and a simple
+           glass jar of the right volume is drawn instead, so a new entry
+           like { id:'bear', name:'Brown bear', q:'a brown bear',
+           volume:0.35, fact:'...' } works right away.
+   ===================================================================== */
+const OBJECTS = [
+  { id:'bathtub',   name:'Bathtub',               q:'a bathtub',                volume: 0.30,      model:'bathtub',   // estimate: full tub to the rim
+    fact:'Clawfoot tubs took off in the 1880s, once makers learned to coat cast iron in glossy enamel.' },
+  { id:'urus',      name:'Lamborghini Urus',      q:'a Lamborghini Urus',       volume: 3.6,       model:'urus',      // estimate: cabin + cargo, all doors shut
+    fact:'The Urus is named after the aurochs, the giant wild ox that modern cattle descend from.' },
+  { id:'bus',       name:'School bus',            q:'a school bus',             volume: 45,        model:'bus',       // estimate: whole enclosed interior
+    fact:'"School bus yellow" was standardized in 1939 because black letters on it are easy to see at dawn.' },
+  { id:'pool',      name:'Olympic swimming pool', q:'an Olympic swimming pool', volume: 2500,      model:'pool',      // estimate: 50 × 25 × 2 m
+    fact:'An Olympic pool holds about 2.5 million liters, so much that people use it as a unit of measure.' },
+  { id:'colosseum', name:'The Colosseum',         q:'the Colosseum',            volume: 1000000,   model:'colosseum', // estimate: bowl filled to the top rim
+    fact:'The Colosseum seated around 50,000 people and was built in under ten years, finished in 80 AD.' },
+];
+
+/* ===================== SETTINGS ===================== */
+const SCOOP_ML     = 118.3;          // one standard scoop = ½ US cup
+const LAUNCH_DATE  = '2026-10-20';   // puzzle No. 1 (local date, YYYY-MM-DD)
+const ROUNDS       = 5;
+const STORE_KEY    = 'scoople:v1';
+
+const SCOOP_R   = Math.cbrt(3 * SCOOP_ML * 1e-6 / (4 * Math.PI)); // ≈ 0.0305 m
+const answerFor = o => Math.max(1, Math.round(o.volume * 1e6 / SCOOP_ML));
+
+const isMobile     = matchMedia('(pointer:coarse)').matches || innerWidth < 600;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const INTRO_DUR    = reduceMotion ? 1.2 : 4.0;
+const FILL_DUR     = reduceMotion ? 2.0 : 5.0;
+const CAM_FILL_DUR = reduceMotion ? 0.35 : 0.9;
+const LUMP_CAP     = isMobile ? 650 : 1000;
+const FLAVORS      = ['#FFF1D2', '#FFB4C4', '#BFEAD4', '#A9745B']; // vanilla, strawberry, mint, chocolate
+const FLAVOR_W     = [0.34, 0.26, 0.24, 0.16];
+
+/* ===================== small helpers ===================== */
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const easeInOutCubic = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeInOutSine = t => -(Math.cos(Math.PI * t) - 1) / 2;
+const easeOutBounce = x => { const n = 7.5625, d = 2.75;
+  if (x < 1 / d) return n * x * x; if (x < 2 / d) return n * (x -= 1.5 / d) * x + .75;
+  if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + .9375; return n * (x -= 2.625 / d) * x + .984375; };
+const fmt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+const V3 = THREE.Vector3;
+
+function xmur3(str) { let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; }
+  return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return (h ^= h >>> 16) >>> 0; }; }
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const pickFlavor = r => { let x = r(); for (let i = 0; i < FLAVORS.length; i++) { x -= FLAVOR_W[i]; if (x <= 0) return i; } return 0; };
+
+/* ===================== dates & storage ===================== */
+const pad = n => String(n).padStart(2, '0');
+const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dayNum = s => { const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+const TODAY = dateKey(new Date());
+const PUZZLE_NO = Math.max(1, dayNum(TODAY) - dayNum(LAUNCH_DATE) + 1);
+const yesterdayOf = s => { const [y, m, d] = s.split('-').map(Number); return dateKey(new Date(y, m - 1, d - 1)); };
+
+function load() { try { const v = JSON.parse(localStorage.getItem(STORE_KEY)); if (v && typeof v === 'object') return v; } catch (e) {} return {}; }
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) {} }
+const DB = load();
+DB.stats ||= { played: 0, total: 0, best: 0, streak: 0, maxStreak: 0, last: null };
+if (!DB.day || DB.day.date !== TODAY) DB.day = { date: TODAY, rounds: [] };
+save();
+
+/* Daily order: seed a generator with today's date, shuffle, take 5 */
+function dailyObjects(date) {
+  const rng = mulberry32(xmur3('scoople|' + date)());
+  const arr = OBJECTS.slice();
+  for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+  return arr.slice(0, Math.min(ROUNDS, arr.length));
+}
+const DAILY = dailyObjects(TODAY);
+
+/* ===================== scoring ===================== */
+const accuracy = (g, a) => Math.round(Math.min(g, a) / Math.max(g, a) * 100);
+const tier = p => p >= 80 ? 'good' : p >= 50 ? 'mid' : 'low';
+const emoji = p => p >= 80 ? '🍨' : p >= 50 ? '🍦' : '🧊';
+function verdict(g, a, p) {
+  const low = g < a, ratio = Math.max(g, a) / Math.min(g, a);
+  let label;
+  if (p === 100) label = 'perfect scoop!';
+  else if (p >= 95) label = 'nailed it!';
+  else if (p >= 80) label = 'close!';
+  else if (p >= 60) label = low ? 'a bit too few' : 'a bit too many';
+  else if (p >= 30) label = low ? 'too few' : 'too many';
+  else label = low ? 'way too few' : 'way too many';
+  let sub;
+  if (p === 100) sub = 'exactly right';
+  else if (ratio >= 2) sub = `${ratio >= 100 ? fmt(ratio) : ratio.toFixed(1).replace(/\.0$/, '')}× too ${low ? 'low' : 'high'}`;
+  else sub = `off by ${fmt(Math.abs(a - g))}`;
+  return { label, sub };
+}
+
+/* ===================== sound (Web Audio) ===================== */
+let AC = null, master = null, muted = !!DB.muted;
+function ensureAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); master = AC.createGain(); master.gain.value = .55; master.connect(AC.destination); } catch (e) { AC = null; } }
+  if (AC && AC.state === 'suspended') AC.resume();
+}
+function plop(pitch = 1, vol = .22) {
+  if (muted || !AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(560 * pitch, t); o.frequency.exponentialRampToValueAtTime(150 * pitch, t + .11);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .006); g.gain.exponentialRampToValueAtTime(.0001, t + .16);
+  o.connect(g).connect(master); o.start(t); o.stop(t + .2);
+}
+function fillTone(dur) {
+  if (muted || !AC) return; const t = AC.currentTime, o = AC.createOscillator(), o2 = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
+  o.type = 'triangle'; o2.type = 'sine';
+  o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(560, t + dur);
+  o2.frequency.setValueAtTime(255, t); o2.frequency.exponentialRampToValueAtTime(840, t + dur);
+  f.type = 'lowpass'; f.frequency.value = 1400;
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.07, t + .3); g.gain.setValueAtTime(.07, t + dur - .25); g.gain.exponentialRampToValueAtTime(.0001, t + dur + .1);
+  o.connect(f); o2.connect(f); f.connect(g).connect(master); o.start(t); o2.start(t); o.stop(t + dur + .15); o2.stop(t + dur + .15);
+}
+function chime(good) {
+  if (muted || !AC) return; const notes = good ? [523.25, 659.25, 783.99, 1046.5] : [440, 523.25, 659.25];
+  notes.forEach((fq, i) => { const t = AC.currentTime + i * .09, o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'triangle'; o.frequency.value = fq; g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.16, t + .01);
+    g.gain.exponentialRampToValueAtTime(.0001, t + .7); o.connect(g).connect(master); o.start(t); o.stop(t + .75); });
+}
+function tick() { if (muted || !AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'square'; o.frequency.value = 1800; g.gain.setValueAtTime(.025, t); g.gain.exponentialRampToValueAtTime(.0001, t + .03);
+  o.connect(g).connect(master); o.start(t); o.stop(t + .04); }
+function setMuted(m) { muted = m; DB.muted = m; save(); $('sOn').style.display = m ? 'none' : ''; $('sOff').style.display = m ? '' : 'none'; }
+setMuted(muted);
+addEventListener('pointerdown', ensureAudio, { passive: true });
+addEventListener('keydown', ensureAudio);
+
+/* ===================== renderer & scene ===================== */
+const canvas = $('c');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+} catch (e) { $('err').style.display = 'grid'; throw e; }
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.setClearColor(0x000000, 0);            // the flat CSS background shows through: no horizon
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.localClippingEnabled = true;
+
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, .01, 1000);
+
+{ // soft studio environment for gentle reflections
+  const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene();
+  const sg = new THREE.SphereGeometry(10, 32, 16), col = [];
+  const p = sg.attributes.position;
+  for (let i = 0; i < p.count; i++) { const t = (p.getY(i) / 10 + 1) / 2; col.push(lerp(.97, 1, t), lerp(.78, .97, t), lerp(.68, .94, t)); }
+  sg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  es.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ side: THREE.BackSide, vertexColors: true })));
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(8, 5), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.9, 2.8), side: THREE.DoubleSide }));
+  panel.position.set(3, 7, 4); panel.lookAt(0, 0, 0); es.add(panel);
+  const p2 = panel.clone(); p2.position.set(-6, 3, -3); p2.lookAt(0, 0, 0); p2.scale.setScalar(.6); es.add(p2);
+  scene.environment = pm.fromScene(es, .03).texture;
+  scene.environmentIntensity = .55;
+  pm.dispose();
+}
+const hemi = new THREE.HemisphereLight(0xfff5ec, 0xf1c3a6, 1.15); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff8f0, 2.1);
+sun.castShadow = true; sun.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
+sun.shadow.bias = -.0004; scene.add(sun, sun.target);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ color: 0x7a3a1c, opacity: .2, depthWrite: false }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+const controls = new OrbitControls(cam, canvas);
+controls.enableDamping = true; controls.dampingFactor = .08; controls.enablePan = false;
+controls.rotateSpeed = .65; controls.zoomSpeed = .9;
+controls.minPolarAngle = .12; controls.maxPolarAngle = 1.46; controls.enabled = false;
+
+/* ===================== textures ===================== */
+function canvasTex(w, h, draw, repeat = true) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+const frostTex = canvasTex(256, 256, (g, w, h) => {      // speckle bump map: frosty ice-cream surface
+  g.fillStyle = '#808080'; g.fillRect(0, 0, w, h);
+  const r = mulberry32(7);
+  for (let i = 0; i < 2600; i++) { const v = 90 + r() * 120 | 0; g.fillStyle = `rgba(${v},${v},${v},${.25 + r() * .4})`;
+    const x = r() * w, y = r() * h, s = .6 + r() * 2.2; g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); }
+});
+const packTex = canvasTex(512, 512, (g, w, h) => {      // side view of packed scoops for the rising fill
+  g.fillStyle = FLAVORS[0]; g.fillRect(0, 0, w, h);
+  const r = mulberry32(11);
+  for (let i = 0; i < 95; i++) {
+    const x = r() * w, y = r() * h, s = 26 + r() * 26, c = new THREE.Color(FLAVORS[pickFlavor(r)]);
+    for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) {
+      const gr = g.createRadialGradient(x + dx - s * .3, y + dy - s * .35, s * .1, x + dx, y + dy, s);
+      gr.addColorStop(0, '#' + c.clone().lerp(new THREE.Color('#fff'), .35).getHexString());
+      gr.addColorStop(.75, '#' + c.getHexString()); gr.addColorStop(1, '#' + c.clone().multiplyScalar(.82).getHexString());
+      g.fillStyle = gr; g.beginPath(); g.arc(x + dx, y + dy, s, 0, 7); g.fill();
+    }
+  }
+});
+packTex.colorSpace = THREE.SRGBColorSpace;
+const blobTex = canvasTex(128, 128, (g, w) => { const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+  gr.addColorStop(0, 'rgba(90,40,20,.55)'); gr.addColorStop(.5, 'rgba(90,40,20,.22)'); gr.addColorStop(1, 'rgba(90,40,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, w); }, false);
+
+/* ===================== geometry & material helpers ===================== */
+const GEO = new Map();
+function cached(key, fn) { if (!GEO.has(key)) { const g = fn(); g.userData.keep = true; GEO.set(key, g); } return GEO.get(key); }
+
+/* Smooth normals across duplicate vertices, keeping hard edges sharper than maxAngle */
+function smoothNormals(geo, maxAngle = 50) {
+  if (geo.index) geo = geo.toNonIndexed();
+  geo.computeVertexNormals();
+  const pos = geo.attributes.position, nor = geo.attributes.normal, n = pos.count, map = new Map(), q = 1e4;
+  for (let i = 0; i < n; i++) {
+    const k = Math.round(pos.getX(i) * q) + ',' + Math.round(pos.getY(i) * q) + ',' + Math.round(pos.getZ(i) * q);
+    let a = map.get(k); if (!a) map.set(k, a = []); a.push(i);
+  }
+  const cos = Math.cos(maxAngle * Math.PI / 180), out = new Float32Array(n * 3);
+  for (const a of map.values()) for (const i of a) {
+    const ix = nor.getX(i), iy = nor.getY(i), iz = nor.getZ(i); let x = 0, y = 0, z = 0;
+    for (const j of a) { const jx = nor.getX(j), jy = nor.getY(j), jz = nor.getZ(j); if (ix * jx + iy * jy + iz * jz >= cos) { x += jx; y += jy; z += jz; } }
+    const l = Math.hypot(x, y, z) || 1; out[i * 3] = x / l; out[i * 3 + 1] = y / l; out[i * 3 + 2] = z / l;
+  }
+  geo.setAttribute('normal', new THREE.BufferAttribute(out, 3));
+  return geo;
+}
+function rrectShape(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2; r = Math.min(r, w / 2, h / 2);
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s;
+}
+/* Rounded box: w (x) × h (y) × d (z), corner radius r */
+function rbox(w, h, d, r = .05) {
+  return cached(`rb${w},${h},${d},${r}`, () => {
+    const b = Math.min(r, d * .45, w * .45, h * .45);
+    const g = new THREE.ExtrudeGeometry(rrectShape(w - 2 * b, h - 2 * b, Math.max(.0001, r - b)),
+      { depth: Math.max(.0001, d - 2 * b), bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 5 });
+    g.translate(0, 0, -(d - 2 * b) / 2); return smoothNormals(g, 50);
+  });
+}
+const shapeFrom = pts => { const s = new THREE.Shape(); pts.forEach(([x, y], i) => i ? s.lineTo(x, y) : s.moveTo(x, y)); s.closePath(); return s; };
+function extrudeZ(shape, depth, bevel = 0, segs = 3, curve = 12) {
+  const g = new THREE.ExtrudeGeometry(shape, { depth: depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel * .9, bevelSegments: segs, curveSegments: curve });
+  g.translate(0, 0, -depth / 2); return smoothNormals(g, 45);
+}
+const MATS = {};
+function M(hex, rough = .6, metal = 0, extra) {
+  const k = hex + '|' + rough + '|' + metal + (extra ? JSON.stringify(extra) : '');
+  return MATS[k] ||= new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: rough, metalness: metal }, extra));
+}
+const HIDDEN = new THREE.MeshBasicMaterial({ visible: false });
+function mk(geo, mat, x = 0, y = 0, z = 0, parent, cast = true) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = true; if (parent) parent.add(m); return m;
+}
+const shell = m => (m.userData.shell = true, m);
+const unitBox = cached('unitbox', () => new THREE.BoxGeometry(1, 1, 1));
+const cyl = (rt, rb, h, s = 20, open = false) => cached(`cy${rt},${rb},${h},${s},${open}`, () => new THREE.CylinderGeometry(rt, rb, h, s, 1, open));
+const sph = (r, s = 20) => cached(`sp${r},${s}`, () => new THREE.SphereGeometry(r, s, Math.max(8, s * .66 | 0)));
+
+function inPoly(x, y, P) { let c = false;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) c = !c; } return c; }
+function polyXExtent(P, y) { let mn = Infinity, mx = -Infinity;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j];
+    if ((yi <= y && yj >= y) || (yj <= y && yi >= y)) { const x = yi === yj ? xi : xi + (y - yi) / (yj - yi) * (xj - xi); mn = Math.min(mn, x); mx = Math.max(mx, x); } }
+  return [mn, mx]; }
+function stadiumPts(hl, hw, n = 64) { const pts = [], c = Math.max(0, hl - hw), h = n / 2;
+  for (let i = 0; i <= h; i++) { const a = -Math.PI / 2 + Math.PI * i / h; pts.push([c + hw * Math.cos(a), hw * Math.sin(a)]); }
+  for (let i = 0; i <= h; i++) { const a = Math.PI / 2 + Math.PI * i / h; pts.push([-c + hw * Math.cos(a), hw * Math.sin(a)]); }
+  return pts; }
+function inStadium(x, z, hl, hw) { const c = Math.max(0, hl - hw), ax = Math.abs(x); return ax <= c ? Math.abs(z) <= hw : (ax - c) ** 2 + z * z <= hw * hw; }
+const rectOutline = (x0, x1, z0, z1) => [new V3(x0, 0, z0), new V3(x1, 0, z0), new V3(x1, 0, z1), new V3(x0, 0, z1)];
+/* Re-map UVs to world space so the packed-scoop texture tiles evenly on any fill shape */
+function worldUV(geo, tile) { const p = geo.attributes.position, uv = [];
+  for (let i = 0; i < p.count; i++) uv.push((p.getX(i) + p.getZ(i) * .7) / tile, p.getY(i) / tile);
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); return geo; }
+
+/* ===================== the scoop ===================== */
+function scoopGeo(detail, seed = 1.3) {
+  const g = new THREE.IcosahedronGeometry(1, detail), p = g.attributes.position, v = new V3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize(); const a = Math.atan2(v.z, v.x);
+    let r = 1 + .04 * Math.sin(v.x * 4.1 + seed) * Math.sin(v.y * 3.7 + seed * 2) * Math.sin(v.z * 4.4 + 1) + .018 * Math.sin(v.x * 9 + v.z * 7 + seed);
+    if (v.y < -.15) { const k = clamp((-.15 - v.y) / .35, 0, 1); r += .07 * k * (.55 + .45 * Math.sin(a * 9 + seed)); } // the scoop's ruffled lip
+    let y = v.y * r; if (y < -.78) y = -.78 - (y + .78) * .2;  // flat-ish bottom
+    p.setXYZ(i, v.x * r, y, v.z * r);
+  }
+  return smoothNormals(g, 180);
+}
+const SCOOP_HERO = cached('scoopHero', () => scoopGeo(4));
+const SCOOP_MID = cached('scoopMid', () => scoopGeo(3, 2.1));
+const SCOOP_LOW = cached('scoopLow', () => scoopGeo(1, .7));
+const SCOOP_LUMP = cached('scoopLump', () => scoopGeo(2, 3.3));
+const scoopMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .55, bumpMap: frostTex, bumpScale: 1.2 });
+const fillMat = new THREE.MeshStandardMaterial({ map: packTex, roughness: .7, bumpMap: frostTex, bumpScale: 1, side: THREE.DoubleSide });
+const fillPlane = new THREE.Plane(new V3(0, -1, 0), 0);
+fillMat.clippingPlanes = [fillPlane];
+const heroMats = FLAVORS.map(c => new THREE.MeshPhysicalMaterial({ color: c, roughness: .5, bumpMap: frostTex, bumpScale: 1.4, sheen: .6, sheenRoughness: .5, sheenColor: new THREE.Color('#fff') }));
+
+/* =====================================================================
+   MODELS — each builder returns:
+   group   : THREE.Group, sitting on the ground (y = 0), units in meters
+   fill    : { bounds, inside(x,z,y), solid (geometry), outline(y) → loop of points }
+   closed  : true if the shell should go see-through during the fill
+   view    : default camera { az, polar }
+   ===================================================================== */
+const MODELS = {
+  bathtub() {
+    const g = new THREE.Group();
+    const L = .85, W = .39, T = .045, yb = .22, yt = .70, H = yt - yb;
+    const taper = y => .84 + .16 * clamp((y - yb) / H, 0, 1);
+    const taperGeo = geo => { const p = geo.attributes.position; for (let i = 0; i < p.count; i++) { const s = taper(p.getY(i)); p.setX(i, p.getX(i) * s); p.setZ(i, p.getZ(i) * s); } p.needsUpdate = true; return geo; };
+    const shp = (hl, hw) => shapeFrom(stadiumPts(hl, hw, 64));
+    const up = (geo, y0) => { geo.rotateX(-Math.PI / 2); geo.translate(0, y0, 0); return geo; };
+    const ext = (s, d, o = {}) => new THREE.ExtrudeGeometry(s, Object.assign({ depth: d, bevelEnabled: false, curveSegments: 24 }, o));
+    const enamel = M('#FBF7F1', .3), skinC = M('#7DB7C6', .45), gold = M('#E0AA4A', .32, .8), chrome = M('#EEF2F5', .16, 1);
+    const ring = shp(L - .002, W - .002); ring.holes.push(shp(L - T, W - T));
+    mk(smoothNormals(taperGeo(up(ext(ring, H), yb)), 40), enamel, 0, 0, 0, g);
+    mk(smoothNormals(taperGeo(up(ext(shp(L, W), H), yb)), 40), [HIDDEN, skinC], 0, 0, 0, g);
+    mk(smoothNormals(taperGeo(up(ext(shp(L, W), .06), yb - .03)), 40), skinC, 0, 0, 0, g);
+    const rim = shp(L + .018, W + .018); rim.holes.push(shp(L - T - .004, W - T - .004));
+    mk(smoothNormals(up(ext(rim, .012, { bevelEnabled: true, bevelThickness: .013, bevelSize: .011, bevelSegments: 3 }), yt - .006), 50), enamel, 0, 0, 0, g);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {   // claw feet
+      const leg = mk(cyl(.026, .042, .2, 14), gold, sx * .58, .14, sz * .24, g); leg.rotation.z = sx * .28; leg.rotation.x = -sz * .22;
+      mk(sph(.045, 16), gold, sx * .62, .045, sz * .27, g);
+      for (let k = 0; k < 3; k++) { const a = (k - 1) * .7 + (sx > 0 ? 0 : Math.PI); mk(sph(.02, 10), gold, sx * .62 + Math.cos(a) * .045, .02, sz * .27 + Math.sin(a) * .045, g); }
+    }
+    for (const z of [-.07, .07]) {                           // faucet
+      mk(cyl(.016, .016, .86, 12), chrome, -L - .05, .43, z, g);
+      const h = mk(rbox(.012, .012, .09, .005), chrome, -L - .05, .9, z, g); h.rotation.y = Math.PI / 4;
+      mk(sph(.022, 12), chrome, -L - .05, .87, z, g);
+    }
+    mk(cyl(.014, .014, .16, 10), chrome, -L - .05, .8, 0, g).rotation.x = Math.PI / 2;
+    const spout = mk(new THREE.TorusGeometry(.1, .015, 10, 24, Math.PI), chrome, -L + .05, .8, 0, g);
+    mk(cyl(.02, .016, .05, 12), chrome, -L + .15, .785, 0, g);
+    mk(cyl(.03, .03, .006, 16), M('#9aa3aa', .3, .9), -L + .22, yb + .034, 0, g);
+    const duck = new THREE.Group(); duck.position.set(L - .16, yt + .01, -.06); duck.rotation.y = 2.4; g.add(duck);
+    const dy = M('#FFD43B', .45);
+    mk(sph(.045, 18), dy, 0, .035, 0, duck).scale.set(1.25, .85, 1);
+    mk(sph(.028, 16), dy, .035, .085, 0, duck);
+    mk(new THREE.ConeGeometry(.012, .03, 10), M('#F2843A', .5), .068, .082, 0, duck).rotation.z = -Math.PI / 2;
+    for (const z of [-.012, .012]) mk(sph(.005, 8), M('#222', .4), .055, .095, z, duck, false);
+
+    const y0 = yb + .03, iL = L - T, iW = W - T;
+    const solid = taperGeo(up(ext(shp(iL + .006, iW + .006), yt - y0 + .01), y0 - .005));
+    return {
+      group: g, closed: false, view: { az: .62, polar: 1.08 },
+      fill: {
+        bounds: { minX: -iL, maxX: iL, minZ: -iW, maxZ: iW, y0, y1: yt },
+        inside: (x, z, y) => y >= y0 && y <= yt && inStadium(x, z, iL * taper(y), iW * taper(y)),
+        solid, outline: y => stadiumPts(iL * taper(y) + .004, iW * taper(y) + .004, 72).map(([x, z]) => new V3(x, y, z)),
+      },
+    };
+  },
+
+  urus() {
+    const g = new THREE.Group();
+    const paint = M('#F4B42A', .32, .15), glass = M('#26313B', .12, .4), black = M('#24262A', .55), trim = M('#3B3F45', .4, .3);
+    // side profile (x = length, y = height), wheel arches cut in
+    const s = new THREE.Shape(); const ar = .53, wb = [-1.55, 1.5];
+    s.moveTo(-2.45, .34); s.lineTo(wb[0] - ar, .34); s.absarc(wb[0], .36, ar, Math.PI, 0, true);
+    s.lineTo(wb[1] - ar, .34); s.absarc(wb[1], .36, ar, Math.PI, 0, true); s.lineTo(2.38, .34);
+    s.quadraticCurveTo(2.55, .35, 2.55, .56); s.lineTo(2.52, .74); s.quadraticCurveTo(2.47, .86, 2.26, .9);
+    s.lineTo(1.08, 1.02); s.lineTo(-1.95, 1.06); s.quadraticCurveTo(-2.42, 1.06, -2.5, .94); s.lineTo(-2.55, .56);
+    s.quadraticCurveTo(-2.55, .35, -2.45, .34);
+    shell(mk(extrudeZ(s, 1.84, .08, 4, 20), paint, 0, 0, 0, g));
+    const gh = [[1.12, 1.0], [.22, 1.5], [-.9, 1.58], [-1.7, 1.5], [-2.28, 1.06], [-2.3, 1.0]];
+    const ghs = new THREE.Shape(); ghs.moveTo(1.12, 1.0); ghs.quadraticCurveTo(.55, 1.32, .22, 1.5); ghs.quadraticCurveTo(-.4, 1.6, -.9, 1.58);
+    ghs.quadraticCurveTo(-1.4, 1.56, -1.7, 1.5); ghs.quadraticCurveTo(-2.05, 1.32, -2.28, 1.06); ghs.lineTo(-2.3, 1.0); ghs.closePath();
+    shell(mk(extrudeZ(ghs, 1.5, .07, 4, 16), paint, 0, 0, 0, g));
+    const win = shapeFrom([[.98, 1.06], [.24, 1.45], [-.9, 1.52], [-1.62, 1.45], [-2.12, 1.1]]);
+    shell(mk(extrudeZ(win, 1.67, 0), glass, 0, 0, 0, g, false));
+    shell(mk(rbox(.09, .46, 1.7, .02), paint, -.48, 1.28, 0, g));               // B-pillar
+    const pane = (a, b, wdt) => { const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+      const m = shell(mk(rbox(len * .92, .02, wdt, .01), glass, mx - dy / len * .075, my + dx / len * .075, 0, g, false)); m.rotation.z = Math.atan2(dy, dx); return m; };
+    pane([1.1, 1.0], [.24, 1.49], 1.42); pane([-1.72, 1.5], [-2.27, 1.07], 1.3);
+    for (const z of [-1, 1]) {
+      mk(rbox(3.9, .09, .05, .02), black, .1, .33, z * .97, g);                 // side skirts
+      mk(rbox(.16, .1, .16, .04), paint, .95, 1.1, z * 1.0, g);                 // mirrors
+      mk(rbox(.08, .035, .5, .015), M('#FFFFFF', .2, 0, { emissive: '#ffffff', emissiveIntensity: .6 }), 2.5, .8, z * .62, g, false).rotation.y = z * .25;
+      mk(rbox(.04, .05, .36, .02), M('#E53B3B', .3, 0, { emissive: '#c01818', emissiveIntensity: .35 }), -2.56, .9, z * .68, g, false);
+      for (const x of wb) {                                                       // wheels
+        const w = new THREE.Group(); w.position.set(x, .38, z * .84); g.add(w);
+        mk(cyl(.38, .38, .28, 30), black, 0, 0, 0, w).rotation.x = Math.PI / 2;
+        mk(new THREE.TorusGeometry(.33, .055, 10, 30), black, 0, 0, z * .14, w);
+        mk(cyl(.27, .27, .03, 28), M('#C9CED4', .25, .9), 0, 0, z * .135, w, false).rotation.x = Math.PI / 2;
+        for (let k = 0; k < 5; k++) { const sp = mk(rbox(.05, .22, .03, .012), trim, 0, 0, z * .155, w, false); sp.rotation.z = k * Math.PI * 2 / 5; sp.translateY(.11); }
+        mk(cyl(.05, .05, .03, 14), trim, 0, 0, z * .16, w, false).rotation.x = Math.PI / 2;
+        mk(rbox(.14, .08, .05, .02), M('#F4D023', .4), .12, .1, z * .11, w, false).rotation.z = .6;
+      }
+    }
+    mk(rbox(.08, .26, 1.5, .05), black, 2.56, .5, 0, g);                         // grille
+    mk(rbox(.06, .12, 1.7, .03), M('#B7473C', .3, 0, { emissive: '#c01818', emissiveIntensity: .25 }), -2.55, .94, 0, g, false);
+    mk(rbox(.08, .16, 1.4, .04), black, -2.55, .42, 0, g);                       // diffuser
+    for (const z of [-.5, .5]) mk(cyl(.05, .05, .1, 12), trim, -2.6, .42, z, g, false).rotation.z = Math.PI / 2;
+
+    const P = [[-2.2, .45], [1.3, .45], [1.3, .95], [1.0, 1.02], [.2, 1.45], [-.9, 1.52], [-1.65, 1.45], [-2.2, 1.06]];
+    const hw = .78;
+    return {
+      group: g, closed: true, view: { az: .78, polar: 1.2 },
+      fill: {
+        bounds: { minX: -2.2, maxX: 1.3, minZ: -hw, maxZ: hw, y0: .45, y1: 1.52 },
+        inside: (x, z, y) => Math.abs(z) <= hw && inPoly(x, y, P),
+        solid: extrudeZ(shapeFrom(P), hw * 2, 0), outline: y => { const [a, b] = polyXExtent(P, y); return rectOutline(a, b, -hw - .01, hw + .01).map(p => (p.y = y, p)); },
+      },
+    };
+  },
+
+  bus() {
+    const g = new THREE.Group();
+    const yel = M('#F6C347', .5), black = M('#25262A', .55), glass = M('#2D3944', .15, .35), white = M('#F4F1EA', .5);
+    const body = shell(mk(rbox(9.7, 2.45, 2.5, .24), yel, -.95, 1.975, 0, g));
+    mk(rbox(1.75, 1.0, 2.24, .2), yel, 4.72, 1.24, 0, g);                       // hood
+    mk(rbox(.12, .62, 1.3, .06), black, 5.58, 1.18, 0, g);                       // grille
+    for (const z of [-.78, .78]) { mk(cyl(.13, .13, .06, 20), white, 5.6, 1.42, z, g, false).rotation.z = Math.PI / 2; }
+    mk(rbox(.26, .24, 2.5, .08), black, 5.66, .8, 0, g); mk(rbox(.26, .24, 2.5, .08), black, -5.86, .85, 0, g);
+    mk(rbox(9.2, .32, 2.2, .1), black, -.95, .62, 0, g);                         // chassis
+    shell(mk(rbox(.04, .95, 2.18, .05), glass, 3.88, 2.5, 0, g, false));         // windshield
+    for (const z of [-1, 1]) {
+      for (let i = 0; i < 10; i++) shell(mk(rbox(.72, .66, .03, .05), glass, -5.15 + i * .86, 2.36, z * 1.255, g, false));
+      for (const y of [1.08, 1.55, 1.92]) shell(mk(rbox(9.6, .06, .03, .02), black, -.95, y, z * 1.258, g, false));
+      shell(mk(rbox(.04, .06, 1.0, .02), black, -5.81, 1.92, z * .5, g, false));
+    }
+    for (const x of [3.12, 3.5]) shell(mk(rbox(.34, 1.7, .03, .04), glass, x, 1.9, 1.26, g, false)); // door
+    for (const z of [-.6, .6]) shell(mk(rbox(.03, .7, .9, .05), glass, -5.82, 2.4, z, g, false));  // rear windows
+    shell(mk(rbox(.03, 1.9, 1.15, .05), M('#E6AE2E', .5), -5.83, 1.75, 0, g, false));               // emergency door
+    const stop = mk(cyl(.26, .26, .03, 8), M('#D9363E', .45), 2.6, 2.0, -1.33, g, false); stop.rotation.x = Math.PI / 2; stop.rotation.y = Math.PI / 8;
+    mk(cyl(.2, .2, .032, 8), M('#ffffff', .5), 2.6, 2.0, -1.335, g, false).rotation.x = Math.PI / 2;
+    mk(cyl(.17, .17, .035, 8), M('#D9363E', .45), 2.6, 2.0, -1.34, g, false).rotation.x = Math.PI / 2;
+    for (const [x, sx] of [[3.92, 1], [-5.85, -1]]) for (const z of [-.95, -.62, .62, .95]) {
+      const c = Math.abs(z) > .8 ? '#E5483E' : '#F5A623';
+      mk(cyl(.09, .09, .06, 16), M(c, .3, 0, { emissive: c, emissiveIntensity: .35 }), x + sx * .02, 2.98, z, g, false).rotation.z = Math.PI / 2;
+    }
+    for (const z of [-1.3, 1.3]) {                                               // mirrors
+      mk(cyl(.025, .025, 1.0, 8), black, 5.35, 1.9, z * .95, g, false);
+      mk(rbox(.08, .4, .24, .04), black, 5.35, 2.4, z, g);
+    }
+    const wheel = (x, w, z) => { const t = mk(cyl(.52, .52, w, 28), black, x, .52, z, g); t.rotation.x = Math.PI / 2;
+      mk(cyl(.26, .26, w + .02, 20), M('#D8DCE0', .35, .6), x, .52, z, g, false).rotation.x = Math.PI / 2; };
+    for (const z of [-1, 1]) { wheel(4.35, .34, z * 1.0); wheel(-2.7, .58, z * .95); }
+    return {
+      group: g, closed: true, view: { az: .66, polar: 1.18 },
+      fill: {
+        bounds: { minX: -5.62, maxX: 3.75, minZ: -1.12, maxZ: 1.12, y0: .95, y1: 3.0 },
+        inside: (x, z, y) => x >= -5.62 && x <= 3.75 && Math.abs(z) <= 1.12 && y >= .95 && y <= 3.0,
+        solid: (() => { const b = new THREE.BoxGeometry(9.37, 2.05, 2.24); b.translate(-.935, 1.975, 0); return b; })(),
+        outline: y => rectOutline(-5.64, 3.77, -1.14, 1.14).map(p => (p.y = y, p)),
+      },
+    };
+  },
+
+  pool() {
+    const g = new THREE.Group();
+    const deck = M('#EDE6DC', .8), aqua = M('#97D6E4', .45), line = M('#2F5FA0', .5), cop = M('#FBF8F3', .55);
+    const D = 2.2;
+    for (const z of [-1, 1]) { mk(rbox(50, D, 3, .08), deck, 0, D / 2, z * 14, g); mk(rbox(50.6, .1, .5, .05), cop, 0, D + .04, z * 12.72, g); mk(unitBox, aqua, 0, 1.2, z * 12.48, g, false).scale.set(50, 2, .04); }
+    for (const x of [-1, 1]) { mk(rbox(3, D, 31, .08), deck, x * 26.5, D / 2, 0, g); mk(rbox(.5, .1, 25.6, .05), cop, x * 25.22, D + .04, 0, g); mk(unitBox, aqua, x * 24.98, 1.2, 0, g, false).scale.set(.04, 2, 25); }
+    mk(unitBox, aqua, 0, .1, 0, g).scale.set(50, .2, 25);
+    for (let i = 0; i < 10; i++) {                                               // lane markings
+      const z = -11.25 + i * 2.5;
+      mk(unitBox, line, 0, .205, z, g, false).scale.set(46, .01, .25);
+      for (const x of [-1, 1]) { mk(unitBox, line, x * 23, .205, z, g, false).scale.set(.25, .01, 1);
+        mk(unitBox, line, x * 24.95, 1.2, z, g, false).scale.set(.02, 1.5, .25); }
+    }
+    const ropeTex = canvasTex(4, 64, (c, w, h) => { const cols = ['#E5484D', '#ffffff', '#3D7DD8', '#ffffff', '#F6C445', '#ffffff'];
+      for (let i = 0; i < 6; i++) { c.fillStyle = cols[i]; c.fillRect(0, i * h / 6, w, h / 6); } });
+    ropeTex.colorSpace = THREE.SRGBColorSpace; ropeTex.repeat.set(1, 25); ropeTex.magFilter = THREE.NearestFilter;
+    const ropeM = new THREE.MeshStandardMaterial({ map: ropeTex, roughness: .5 });
+    for (let i = 1; i < 10; i++) mk(cyl(.07, .07, 50, 10), ropeM, 0, 2.08, -12.5 + i * 2.5, g, false).rotation.z = Math.PI / 2;
+    for (let i = 0; i < 10; i++) { const z = -11.25 + i * 2.5;                    // starting blocks
+      mk(rbox(.6, .7, .55, .08), M('#FFFFFF', .5), 26.2, D + .35, z, g);
+      mk(rbox(.62, .06, .6, .03), M('#5E6B78', .6), 26.17, D + .72, z, g).rotation.z = -.12; }
+    const flagGeo = cached('flag', () => new THREE.ShapeGeometry(shapeFrom([[-.16, 0], [.16, 0], [0, -.38]])));
+    const flagCols = ['#E5484D', '#FFFFFF', '#3D7DD8'];
+    const nF = 46, flags = new THREE.InstancedMesh(flagGeo, new THREE.MeshStandardMaterial({ roughness: .6, side: THREE.DoubleSide }), nF * 2);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromAxisAngle(new V3(0, 1, 0), Math.PI / 2), one = new V3(1, 1, 1);
+    let fi = 0;
+    for (const x of [-20, 20]) {
+      for (const z of [-14.2, 14.2]) mk(cyl(.05, .05, 2, 10), M('#E9EDF0', .2, .9), x, D + 1, z, g);
+      mk(cyl(.015, .015, 28.4, 6), M('#555', .5), x, D + 1.95, 0, g, false).rotation.x = Math.PI / 2;
+      for (let k = 0; k < nF; k++) { m4.compose(new V3(x, D + 1.95, -13.6 + k * 27.2 / (nF - 1)), q, one); flags.setMatrixAt(fi, m4); flags.setColorAt(fi++, new THREE.Color(flagCols[k % 3])); }
+    }
+    flags.castShadow = true; g.add(flags);
+    const chrome = M('#EEF2F5', .16, 1);
+    for (const x of [-21.5, 21.5]) for (const dx of [-.28, .28]) {               // ladders
+      mk(cyl(.03, .03, 1.7, 10), chrome, x + dx, 1.5, 12.3, g);
+      const arc = mk(new THREE.TorusGeometry(.25, .03, 8, 16, Math.PI), chrome, x + dx, 2.35, 12.55, g); arc.rotation.y = Math.PI / 2;
+    }
+    return {
+      group: g, closed: false, view: { az: .55, polar: .98 },
+      fill: {
+        bounds: { minX: -24.95, maxX: 24.95, minZ: -12.45, maxZ: 12.45, y0: .2, y1: D },
+        inside: (x, z, y) => Math.abs(x) <= 24.95 && Math.abs(z) <= 12.45 && y >= .2 && y <= D,
+        solid: (() => { const b = new THREE.BoxGeometry(50, 2.05, 25); b.translate(0, 1.175, 0); return b; })(),
+        outline: y => rectOutline(-24.9, 24.9, -12.4, 12.4).map(p => (p.y = y, p)),
+      },
+    };
+  },
+
+  colosseum() {
+    const g = new THREE.Group();
+    const A = 94.5, B = 78, K = B / A, TH = 4, HT = 48;
+    const stone = M('#E8D0A8', .9), stoneL = M('#F2E1C4', .88), dark = M('#9E7C5A', .95), riserM = M('#D9BE96', .9, 0, { side: THREE.DoubleSide });
+    const N = 84, dt = Math.PI * 2 / N;
+    const tiers = [[0, 10.5], [10.5, 22], [22, 33.5], [33.5, HT]];
+    const archShape = new THREE.Shape(); archShape.moveTo(-.5, 0); archShape.lineTo(.5, 0); archShape.lineTo(.5, .6); archShape.absarc(0, .6, .5, 0, Math.PI, false); archShape.closePath();
+    const archGeo = cached('arch', () => new THREE.ShapeGeometry(archShape, 10));
+    const walls = new THREE.InstancedMesh(unitBox, stone, N), arches = new THREE.InstancedMesh(archGeo, dark, N * 3);
+    const pil = new THREE.InstancedMesh(unitBox, stoneL, N * 4), wins = new THREE.InstancedMesh(unitBox, dark, N / 2);
+    const m = new THREE.Matrix4(), X = new V3(), Y = new V3(0, 1, 0), Z = new V3();
+    const frame = th => { const px = A * Math.cos(th), pz = B * Math.sin(th); const tx = -A * Math.sin(th), tz = B * Math.cos(th), tl = Math.hypot(tx, tz);
+      const nx = B * Math.cos(th), nz = A * Math.sin(th), nl = Math.hypot(nx, nz); X.set(-tx / tl, 0, -tz / tl); Z.set(nx / nl, 0, nz / nl); return { px, pz, tl }; };
+    const place = (inst, i, px, py, pz, sx, sy, sz) => { m.makeBasis(X, Y, Z); m.scale(new V3(sx, sy, sz)); m.setPosition(px, py, pz); inst.setMatrixAt(i, m); };
+    let ai = 0, pi = 0, wi = 0;
+    for (let i = 0; i < N; i++) {
+      const th = i * dt, { px, pz, tl } = frame(th), sw = tl * dt;
+      place(walls, i, px - Z.x * TH / 2, HT / 2, pz - Z.z * TH / 2, sw * 1.05, HT, TH);
+      for (let k = 0; k < 3; k++) { const [a, b] = tiers[k]; place(arches, ai++, px + Z.x * .06, a + 1.0, pz + Z.z * .06, sw * .56, (b - a - 2.3) / 1.1, 1); }
+      if (i % 2 === 0) place(wins, wi++, px, 40.5, pz, 1.7, 2.6, .25);
+      const f2 = frame(th - dt / 2);
+      for (let k = 0; k < 4; k++) { const [a, b] = tiers[k]; place(pil, pi++, f2.px + Z.x * .3, (a + b) / 2, f2.pz + Z.z * .3, k === 3 ? .8 : 1.1, b - a, .7); }
+    }
+    for (const im of [walls, arches, pil, wins]) { im.castShadow = true; im.receiveShadow = true; g.add(im); }
+    const ringGeo = (ao, ai2, h) => { const s = new THREE.Shape(); s.absellipse(0, 0, ao, ao * K + (B - A * K), 0, Math.PI * 2, false);
+      const hole = new THREE.Path(); hole.absellipse(0, 0, ai2, ai2 * K + (B - A * K) * (ai2 / ao), 0, Math.PI * 2, true); s.holes.push(hole);
+      const geo = new THREE.ExtrudeGeometry(s, { depth: h, bevelEnabled: false, curveSegments: 120 }); geo.rotateX(-Math.PI / 2); return smoothNormals(geo, 40); };
+    for (const y of [10.5, 22, 33.5]) mk(ringGeo(A + .8, A - TH - .2, 1.1), stoneL, 0, y - .55, 0, g);
+    mk(ringGeo(A + 1.1, A - TH - .4, 1.5), stoneL, 0, HT, 0, g);
+    // cavea: stepped seating bowl
+    const pts = [[43, .3], [43, 4.2], [46.5, 4.2]]; let r = 46.5, y = 4.2; const S = 12, dr = (91.5 - 46.5) / S, dy = (46 - 4.2) / S;
+    for (let i = 0; i < S; i++) { y += dy; pts.push([r, y]); r += dr; pts.push([r, y]); }
+    pts.push([91.5, HT]);
+    const risers = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [r1, y1] = pts[i], [r2, y2] = pts[i + 1];
+      if (r1 === r2) { risers.push([r1, y1, y2]); const c = mk(new THREE.CylinderGeometry(r1, r1, y2 - y1, 120, 1, true), riserM, 0, (y1 + y2) / 2, 0, g); c.scale.z = K; }
+      else { const rg = new THREE.RingGeometry(r1, r2, 120, 1); rg.rotateX(-Math.PI / 2); const t = mk(rg, i % 4 === 2 ? stoneL : M('#EEDCBC', .9), 0, y1, 0, g); t.scale.z = K; }
+    }
+    const R = yy => { for (const [rr, a, b] of risers) if (yy >= a && yy <= b) return rr; return -1; };
+    mk(new THREE.CylinderGeometry(A + 9, A + 10, .3, 120), M('#EBDCCB', .95), 0, .15, 0, g).scale.z = (B + 9.5) / (A + 9.5);
+    const arena = mk(new THREE.CircleGeometry(43.2, 120).rotateX(-Math.PI / 2), M('#E9C88F', .95), 0, .31, 0, g); arena.scale.z = K;
+    const hyp = mk(new THREE.CircleGeometry(30, 96).rotateX(-Math.PI / 2), M('#8E6A4C', .95), 0, .33, 0, g, false); hyp.scale.z = K;
+    for (let z = -22; z <= 22; z += 3.4) { const hx = 29 * Math.sqrt(Math.max(0, 1 - (z / (30 * K)) ** 2)); if (hx > 1) mk(unitBox, stoneL, 0, .9, z, g).scale.set(hx * 1.9, 1.2, .55); }
+    mk(unitBox, stoneL, 0, .9, 0, g).scale.set(.6, 1.2, 46);
+    mk(rbox(22, .5, 36, .2), M('#A9794F', .8), 21, .55, 0, g);                   // rebuilt wooden arena floor
+    // fill = bowl above the seats, nudged into the stone so edges never flicker
+    const prof = [[.01, .25], [43.4, .25]];
+    for (let i = 1; i < pts.length; i++) prof.push([pts[i][0] + .4, pts[i][1] - .4]);
+    prof.push([91.9, HT], [.01, HT]);
+    const solid = new THREE.LatheGeometry(prof.map(([a, b]) => new THREE.Vector2(a, b)), 120); solid.scale(1, 1, K); solid.computeVertexNormals();
+    return {
+      group: g, closed: false, view: { az: .55, polar: .95 },
+      fill: {
+        bounds: { minX: -91.5, maxX: 91.5, minZ: -91.5 * K, maxZ: 91.5 * K, y0: .3, y1: HT },
+        inside: (x, z, yy) => yy >= .3 && yy <= HT && Math.hypot(x, z / K) <= R(yy) - .1,
+        solid, outline: yy => { const rr = Math.max(R(Math.min(yy, HT)), 43) + .3, o = []; for (let i = 0; i < 120; i++) { const a = i / 120 * Math.PI * 2; o.push(new V3(rr * Math.cos(a), yy, rr * K * Math.sin(a))); } return o; },
+      },
+    };
+  },
+};
+
+/* Fallback model for objects without a builder: a glass jar of the right volume */
+function jarModel(o) {
+  const g = new THREE.Group(), r = Math.cbrt(o.volume / (2 * Math.PI)), h = 2 * r, t = r * .04;
+  const glass = M('#CFE7EE', .1, 0, { transparent: true, opacity: .35, depthWrite: false });
+  shell(mk(cyl(r + t, r + t, h, 48, true), glass, 0, h / 2 + t, 0, g, false));
+  mk(cyl(r + t, r + t, t, 48), M('#BFD9E0', .2), 0, t / 2, 0, g);
+  mk(new THREE.TorusGeometry(r + t, t * 1.2, 10, 48).rotateX(Math.PI / 2), M('#BFD9E0', .2), 0, h + t, 0, g);
+  return {
+    group: g, closed: false, view: { az: .6, polar: 1.1 },
+    fill: {
+      bounds: { minX: -r, maxX: r, minZ: -r, maxZ: r, y0: t, y1: h + t },
+      inside: (x, z, y) => y >= t && y <= h + t && x * x + z * z <= r * r,
+      solid: new THREE.CylinderGeometry(r * 1.002, r * 1.002, h, 40).translate(0, h / 2 + t, 0),
+      outline: y => { const p = []; for (let i = 0; i < 64; i++) { const a = i / 64 * Math.PI * 2; p.push(new V3(Math.cos(a) * r * 1.01, y, Math.sin(a) * r * 1.01)); } return p; },
+    },
+  };
+}
+
+/* =====================================================================
+   FILL — the pour animation. Three modes, picked by answer size:
+   small  (≤ 300)        every scoop drops on its own and piles up
+   medium (≤ 5,000,000)  a stream of balls, each standing in for a group
+   huge                  a dense spray of tiny scoops + a rising lumpy top
+   ===================================================================== */
+function makeFill(spec, answer, objSize, rng) {
+  const { inside, bounds: b } = spec;
+  const NY = 56, NG = 44, bw = b.maxX - b.minX, bd = b.maxZ - b.minZ, cell = bw * bd / (NG * NG);
+  const ys = [], areas = [];
+  for (let j = 0; j <= NY; j++) {
+    const y = lerp(b.y0 + 1e-4, b.y1 - 1e-4, j / NY); let c = 0;
+    for (let ix = 0; ix < NG; ix++) for (let iz = 0; iz < NG; iz++) if (inside(b.minX + (ix + .5) * bw / NG, b.minZ + (iz + .5) * bd / NG, y)) c++;
+    ys.push(y); areas.push(c * cell);
+  }
+  const cum = [0]; for (let j = 1; j <= NY; j++) cum.push(cum[j - 1] + (areas[j - 1] + areas[j]) / 2 * (ys[j] - ys[j - 1]));
+  const Vvis = cum[NY] || 1, topArea = Math.max(areas[NY], areas[NY - 1], 1e-6), maxA = Math.max(...areas);
+  const levelAt = f => { const t = clamp(f, 0, 1) * Vvis; let j = 1; while (j < NY && cum[j] < t) j++;
+    const a = cum[j - 1], c = cum[j]; return lerp(ys[j - 1], ys[j], c > a ? (t - a) / (c - a) : 0); };
+  const mode = answer <= 300 ? 'small' : answer <= 5e6 ? 'medium' : 'huge';
+  const group = new THREE.Group(); const dummy = new THREE.Object3D(); const col = new THREE.Color();
+  const randInside = y => { for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (inside(x, z, y)) return [x, z]; } return [(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2]; };
+  const fill = { mode, levelAt, Vvis, topArea, group, level: b.y0, fraction: 0, count: 0, done: false, t: 0 };
+
+  if (mode === 'small') {
+    // grid spacing chosen so exactly `answer` scoops fit the interior (soft scoops squish together)
+    let s = Math.cbrt(Vvis / answer), pts = [];
+    for (let iter = 0; iter < 24; iter++) {
+      pts = []; const ins = s * .3;
+      for (let y = b.y0 + s * .5; y < b.y1; y += s * .9) for (let x = b.minX + s * .5; x < b.maxX; x += s) for (let z = b.minZ + s * .5; z < b.maxZ; z += s) {
+        const jx = x + (rng() - .5) * s * .2, jz = z + (rng() - .5) * s * .2;
+        if (inside(jx, jz, y) && inside(jx + ins, jz, y) && inside(jx - ins, jz, y) && inside(jx, jz + ins, y) && inside(jx, jz - ins, y)) pts.push([jx, y + (rng() - .5) * s * .15, jz]);
+      }
+      if (pts.length >= answer) break; s *= .96;
+    }
+    pts.sort((p, q) => p[1] - q[1] + (rng() - .5) * s * .4);
+    pts = pts.slice(0, answer); while (pts.length < answer) pts.push(pts[pts.length - 1] || [0, b.y0 + SCOOP_R, 0]);
+    const im = new THREE.InstancedMesh(SCOOP_MID, scoopMat, answer); im.castShadow = true; im.receiveShadow = true;
+    const drops = pts.map((p, i) => ({ p, t0: (i / answer) * FILL_DUR * .82, axis: new V3(rng() - .5, rng() - .5, rng() - .5).normalize(), spin: 2 + rng() * 4, landed: false }));
+    for (let i = 0; i < answer; i++) { im.setColorAt(i, col.set(FLAVORS[pickFlavor(rng)])); dummy.scale.setScalar(0); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); }
+    group.add(im);
+    const dropH = (b.y1 - b.y0) + objSize * .4, fallT = .5;
+    fill.update = dt => {
+      fill.t += dt; let landed = 0;
+      for (let i = 0; i < answer; i++) {
+        const d = drops[i], k = (fill.t - d.t0) / fallT;
+        if (k < 0) { dummy.scale.setScalar(0); }
+        else { const e = k >= 1 ? 1 : easeOutBounce(k); dummy.position.set(d.p[0], d.p[1] + dropH * (1 - e), d.p[2]);
+          dummy.quaternion.setFromAxisAngle(d.axis, (1 - e) * d.spin); dummy.scale.setScalar(SCOOP_R);
+          if (k >= 1) { landed++; if (!d.landed) { d.landed = true; if (i % Math.max(1, answer / 40 | 0) === 0) plop(.8 + rng() * .5, .15); } } }
+        dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
+      }
+      im.instanceMatrix.needsUpdate = true;
+      fill.count = landed; fill.fraction = landed / answer; fill.level = levelAt(fill.fraction);
+      if (landed >= answer) fill.done = true;
+    };
+    fill.finish = () => { fill.t = 1e9; fill.update(0); };
+    return fill;
+  }
+
+  // ---- medium & huge: clipped solid + lumpy packed-scoop surface + falling stream ----
+  const sp = Math.max(SCOOP_R * 2 * .85, Math.sqrt(maxA / LUMP_CAP)), lr = sp * .72;
+  const solidGeo = worldUV(spec.solid.clone(), sp * 7);
+  const solid = new THREE.Mesh(solidGeo, fillMat); solid.receiveShadow = true; group.add(solid);
+  const cands = [], testYs = [0, .25, .5, .75, 1].map(f => lerp(b.y0 + 1e-3, b.y1 - 1e-3, f));
+  for (let z = b.minZ + sp * .4, row = 0; z <= b.maxZ; z += sp * .866, row++) for (let x = b.minX + (row % 2 ? sp * .5 : 0) + sp * .3; x <= b.maxX; x += sp) {
+    const jx = x + (rng() - .5) * sp * .25, jz = z + (rng() - .5) * sp * .25;
+    if (testYs.some(y => inside(jx, jz, y))) cands.push({ x: jx, z: jz, jy: (rng() - .5) * lr * .3, s: .82 + rng() * .3 });
+  }
+  while (cands.length > LUMP_CAP * 1.3) cands.splice(rng() * cands.length | 0, 1);
+  const lumps = new THREE.InstancedMesh(SCOOP_LUMP, scoopMat, Math.max(1, cands.length));
+  lumps.receiveShadow = true; lumps.castShadow = false;
+  cands.forEach((c, i) => lumps.setColorAt(i, col.set(FLAVORS[pickFlavor(rng)])));
+  const lumpRot = cands.map(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng() * 6.28, (rng() - .5) * .5)));
+  group.add(lumps);
+  const ins = lr * .35;
+  const setLevel = level => {
+    fillPlane.constant = level;
+    const show = level > b.y0 + lr * .15;
+    for (let i = 0; i < cands.length; i++) {
+      const c = cands[i], y = Math.min(level, b.y1) - lr * .05;
+      const ok = show && inside(c.x, c.z, y) && inside(c.x + ins, c.z, y) && inside(c.x - ins, c.z, y) && inside(c.x, c.z + ins, y) && inside(c.x, c.z - ins, y);
+      dummy.position.set(c.x, level - lr * .3 + c.jy, c.z); dummy.quaternion.copy(lumpRot[i]); dummy.scale.setScalar(ok ? lr * c.s : 0);
+      dummy.updateMatrix(); lumps.setMatrixAt(i, dummy.matrix);
+    }
+    lumps.instanceMatrix.needsUpdate = true;
+  };
+  setLevel(b.y0);
+
+  const huge = mode === 'huge', S = huge ? (isMobile ? 700 : 1100) : 260;
+  const br = huge ? objSize * .005 : Math.max(SCOOP_R, objSize * .006);
+  const balls = new THREE.InstancedMesh(SCOOP_LOW, scoopMat, S); balls.frustumCulled = false;
+  for (let i = 0; i < S; i++) balls.setColorAt(i, col.set(FLAVORS[pickFlavor(rng)]));
+  group.add(balls);
+  const spawnY = b.y1 + (b.y1 - b.y0) * .5 + objSize * .18, fallT = huge ? .6 : .55, grav = 2 * (spawnY - b.y0) / (fallT * fallT);
+  const P = new Float32Array(S * 4); for (let i = 0; i < S; i++) P[i * 4 + 1] = -1e9; // x, y, z, vy
+  const nPour = huge ? 0 : clamp(Math.round(Math.sqrt(maxA) / (objSize * .2)), 1, 3);
+  const pours = Array.from({ length: nPour }, () => { const [x, z] = randInside(b.y1 - 1e-3); return { x, z, tx: x, tz: z, wait: 0 }; });
+  const spread = Math.sqrt(maxA) * .07;
+  let spawnAcc = 0, next = 0, pouring = false, plopT = 0;
+  const spawn = i => {
+    let x, z;
+    if (pours.length) { const p = pours[i % pours.length]; let ok = false;
+      for (let k = 0; k < 4 && !ok; k++) { x = p.x + (rng() + rng() - 1) * spread; z = p.z + (rng() + rng() - 1) * spread; ok = inside(x, z, b.y1 - 1e-3); }
+      if (!ok) [x, z] = randInside(b.y1 - 1e-3); }
+    else [x, z] = randInside(b.y1 - 1e-3);
+    P[i * 4] = x; P[i * 4 + 1] = spawnY + rng() * (b.y1 - b.y0) * .3; P[i * 4 + 2] = z; P[i * 4 + 3] = -rng() * grav * .1;
+  };
+  const drawBalls = () => {
+    for (let i = 0; i < S; i++) { const y = P[i * 4 + 1]; dummy.position.set(P[i * 4], y, P[i * 4 + 2]); dummy.quaternion.identity(); dummy.scale.setScalar(y > -1e8 ? br : 0); dummy.updateMatrix(); balls.setMatrixAt(i, dummy.matrix); }
+    balls.instanceMatrix.needsUpdate = true;
+  };
+  drawBalls();
+  fill.update = dt => {
+    fill.t += dt; pouring = fill.t < FILL_DUR;
+    const k = clamp(fill.t / FILL_DUR, 0, 1), f = easeInOutSine(k);
+    fill.fraction = f; fill.count = Math.round(answer * f); fill.level = levelAt(f); setLevel(fill.level);
+    for (const p of pours) { p.wait -= dt; if (p.wait <= 0) { [p.tx, p.tz] = randInside(b.y1 - 1e-3); p.wait = .8 + rng() * .8; } p.x = lerp(p.x, p.tx, 1 - Math.exp(-dt * 2)); p.z = lerp(p.z, p.tz, 1 - Math.exp(-dt * 2)); }
+    if (pouring) { spawnAcc += dt * S / fallT * .95; while (spawnAcc >= 1) { spawnAcc--; spawn(next); next = (next + 1) % S; } }
+    let alive = 0;
+    for (let i = 0; i < S; i++) { const o = i * 4; if (P[o + 1] < -1e8) continue;
+      P[o + 3] -= grav * dt; P[o + 1] += P[o + 3] * dt;
+      if (P[o + 1] <= fill.level + lr * .3) P[o + 1] = -1e9; else alive++; }
+    drawBalls();
+    plopT -= dt; if (pouring && plopT <= 0) { plop(.7 + rng() * .6, .12); plopT = huge ? .05 + rng() * .05 : .08 + rng() * .1; }
+    if (!pouring && alive === 0) fill.done = true;
+  };
+  fill.finish = () => { fill.t = FILL_DUR; fill.fraction = 1; fill.count = answer; fill.level = b.y1; setLevel(b.y1); for (let i = 0; i < S; i++) P[i * 4 + 1] = -1e9; drawBalls(); fill.done = true; };
+  return fill;
+}
+
+/* Thin ring showing where the player's guess would have filled to */
+class PolyCurve extends THREE.Curve { constructor(p) { super(); this.p = p; }
+  getPoint(t, o = new V3()) { const n = this.p.length, f = clamp(t, 0, 1) * n, i = Math.min(Math.floor(f), n - 1); return o.copy(this.p[i]).lerp(this.p[(i + 1) % n], f - i); } }
+function makeGuessLine(spec, fill, guess, answer, objSize) {
+  const b = spec.bounds, f = guess / answer; let y = 0, capped = false;
+  if (f <= 1) y = fill.levelAt(f);
+  else { y = b.y1 + (f - 1) * fill.Vvis / fill.topArea; const maxY = b.y1 + (b.y1 - b.y0) * 1.1 + objSize * .08; if (y > maxY) { y = maxY; capped = true; } }
+  const pts = spec.outline(clamp(y, b.y0 + 1e-3, b.y1 - 1e-3)).map(p => (p.y = y, p));
+  const geo = new THREE.TubeGeometry(new PolyCurve(pts), pts.length * 4, objSize * .0032, 6, true);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x1d1a19, depthTest: false, transparent: true, opacity: .9 }));
+  mesh.renderOrder = 20;
+  return { mesh, pts, y, over: f > 1, capped };
+}
+
+/* ===================== camera ===================== */
+const camS = { target: new V3(), dist: 1, polar: 1, az: 0 };
+let camTween = null;
+function applyCam() { cam.position.setFromSpherical(new THREE.Spherical(camS.dist, camS.polar, camS.az)).add(camS.target); cam.lookAt(camS.target); }
+function readCam() { const sp = new THREE.Spherical().setFromVector3(cam.position.clone().sub(controls.target));
+  camS.target.copy(controls.target); camS.dist = sp.radius; camS.polar = sp.phi; camS.az = sp.theta; }
+function lockCam() { if (controls.enabled) readCam(); controls.enabled = false; }
+function unlockCam() { controls.target.copy(camS.target); applyCam(); controls.enabled = true; controls.update(); }
+function tweenCam(to, dur, o = {}) {
+  camTween = { from: { target: camS.target.clone(), dist: camS.dist, polar: camS.polar, az: camS.az }, to, dur: Math.max(.001, dur), t: 0, ...o };
+}
+function stepCam(dt) {
+  if (!camTween) return; const tw = camTween; tw.t += dt; const k = clamp(tw.t / tw.dur, 0, 1), e = (tw.ease || easeInOutCubic)(k);
+  const { from: a, to: b } = tw;
+  const d = tw.exp ? a.dist * Math.pow(b.dist / a.dist, e) : lerp(a.dist, b.dist, e);
+  let w = e;
+  if (tw.intro) { // keep the scoop in frame while pulling back, then settle on the object
+    const lin = clamp((d - a.dist) / (b.dist - a.dist), 0, 1), sep = a.target.distanceTo(b.target) || 1;
+    const halfH = Math.atan(Math.tan(cam.fov * Math.PI / 360) * cam.aspect), maxW = d * Math.tan(Math.min(halfH, cam.fov * Math.PI / 360)) * .55 / sep;
+    w = lerp(Math.min(lin, maxW), 1, smooth(.8, 1, k));
+  }
+  camS.target.lerpVectors(a.target, b.target, w); camS.dist = d; camS.polar = lerp(a.polar, b.polar, e); camS.az = a.az + angDiff(a.az, b.az) * e;
+  applyCam();
+  if (k >= 1) { camTween = null; tw.done && tw.done(); }
+}
+function fitDist(radius) {
+  const v = cam.fov * Math.PI / 180, h = 2 * Math.atan(Math.tan(v / 2) * cam.aspect);
+  return radius / Math.sin(Math.min(v, h) / 2);
+}
+
+/* ===================== round state ===================== */
+let R = null;     // current round
+let state = 'idle';
+const heroScoop = new THREE.Mesh(SCOOP_HERO, heroMats[2]); heroScoop.castShadow = true; scene.add(heroScoop);
+const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false }));
+scene.add(blob);
+
+function disposeRound() {
+  if (!R) return;
+  scene.remove(R.model.group); if (R.fill) scene.remove(R.fill.group); if (R.line) { scene.remove(R.line.mesh); R.line.mesh.geometry.dispose(); R.line.mesh.material.dispose(); }
+  const kill = o => o.traverse(n => { if (n.geometry && !n.geometry.userData.keep) n.geometry.dispose(); if (n.isInstancedMesh) n.dispose(); if (n.userData.ownMat) n.material.dispose(); });
+  kill(R.model.group); if (R.fill) kill(R.fill.group);
+  R = null;
+}
+
+function setupRound(idx) {
+  disposeRound();
+  const obj = DAILY[idx], answer = answerFor(obj);
+  const model = (MODELS[obj.model] || (() => jarModel(obj)))();
+  const g = model.group; scene.add(g);
+  g.traverse(n => { if (n.userData.shell) { n.material = n.material.clone(); n.userData.ownMat = true; } });
+  const box = new THREE.Box3().setFromObject(g), size = box.getSize(new V3()), center = box.getCenter(new V3());
+  const objSize = Math.max(size.x, size.y, size.z);
+  // scoop sits just to the right of the object, as seen from the default view
+  const az = model.view.az, right = new V3(Math.cos(az), 0, -Math.sin(az)), toward = new V3(Math.sin(az), 0, Math.cos(az));
+  const he = Math.abs(right.x) * size.x / 2 + Math.abs(right.z) * size.z / 2, hf = Math.abs(toward.x) * size.x / 2 + Math.abs(toward.z) * size.z / 2;
+  const gap = Math.max(.1, objSize * .035);
+  const sPos = center.clone().setY(0).addScaledVector(right, he + gap + SCOOP_R).addScaledVector(toward, hf * .25);
+  heroScoop.position.set(sPos.x, SCOOP_R * .8, sPos.z); heroScoop.scale.setScalar(SCOOP_R); heroScoop.rotation.y = 1.2;
+  heroScoop.material = heroMats[[2, 1, 3][idx % 3]];
+  blob.position.set(sPos.x, .0005 + objSize * 1e-5, sPos.z); blob.scale.setScalar(SCOOP_R * 3.4);
+  // framing
+  const sphere = new THREE.Box3().copy(box).expandByPoint(heroScoop.position.clone().addScalar(SCOOP_R)).getBoundingSphere(new THREE.Sphere());
+  const target = new V3(sphere.center.x, Math.max(size.y * .42, sphere.center.y * .9), sphere.center.z);
+  const view = { target, dist: fitDist(sphere.radius), polar: model.view.polar, az };
+  // lights & ground scaled to the object
+  const L = objSize * 1.6;
+  sun.position.copy(center).add(new V3(.55, 1, .45).normalize().multiplyScalar(L * 1.5)); sun.target.position.copy(center);
+  const sc = sun.shadow.camera; sc.left = sc.bottom = -objSize * .85; sc.right = sc.top = objSize * .85; sc.near = L * .3; sc.far = L * 3; sc.updateProjectionMatrix();
+  sun.shadow.normalBias = objSize * .0012;
+  ground.scale.setScalar(objSize * 40); ground.position.set(center.x, 0, center.z);
+  controls.minDistance = sphere.radius * .35; controls.maxDistance = view.dist * 2.2;
+  const rng = mulberry32(xmur3(TODAY + obj.id)());
+  R = { idx, obj, answer, model, size, center, objSize, view, rng, sPos, fill: null, line: null, guess: null };
+  return R;
+}
+
+function introView() {
+  const s = heroScoop.position;
+  return { target: new V3(s.x, s.y * 1.05, s.z), dist: SCOOP_R * 9, polar: 1.36, az: R.view.az + .3 };
+}
+
+/* ===================== UI ===================== */
+const ui = { q: $('question'), qwrap: $('qwrap'), form: $('guessForm'), gin: $('gin'), submit: $('bSubmit'), counter: $('counter'), cnum: $('cnum'),
+  card: $('card'), reset: $('bReset'), results: $('bResults'), scoopTag: $('scoopTag'), guessTag: $('guessTag'), line: $('scoopLine'), dot: $('scoopDot') };
+$('pnum').textContent = `No. ${PUZZLE_NO}`;
+function renderProgress(cur) {
+  [...$('prog').children].forEach((el, i) => { const r = DB.day.rounds[i]; el.className = r ? tier(r.acc) : i === cur ? 'cur' : ''; });
+}
+let guessDigits = '';
+ui.gin.addEventListener('input', () => {
+  const raw = ui.gin.value, caret = ui.gin.selectionStart ?? raw.length;
+  const before = raw.slice(0, caret).replace(/\D/g, '').length;
+  let digits = raw.replace(/\D/g, ''); const lead = digits.length - digits.replace(/^0+/, '').length;
+  digits = digits.replace(/^0+/, '').slice(0, 15);
+  const out = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  ui.gin.value = out; guessDigits = digits;
+  let want = Math.max(0, before - lead), pos = 0; while (pos < out.length && want > 0) { if (/\d/.test(out[pos])) want--; pos++; }
+  try { ui.gin.setSelectionRange(pos, pos); } catch (e) {}
+  ui.submit.disabled = !(state === 'guess' && digits.length && Number(digits) > 0);
+});
+ui.gin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitGuess(); } });
+ui.form.addEventListener('submit', e => { e.preventDefault(); submitGuess(); });
+ui.reset.addEventListener('click', () => { if (state !== 'guess' && state !== 'result') return; lockCam(); tweenCam(R.view, .7, { done: () => unlockCam() }); });
+
+function setQuestion(o) { ui.q.innerHTML = `How many scoops fill <em>${o.q}</em>?`; }
+
+function startRound(idx) {
+  state = 'intro'; setupRound(idx);
+  setQuestion(R.obj); renderProgress(idx);
+  ui.qwrap.classList.remove('away'); hideCard();
+  ui.form.className = 'off'; ui.gin.disabled = true; ui.gin.value = ''; guessDigits = ''; ui.submit.disabled = true;
+  ui.counter.classList.remove('show'); ui.reset.classList.remove('show'); ui.results.classList.remove('show');
+  ui.guessTag.classList.remove('show');
+  controls.enabled = false;
+  Object.assign(camS, introView(), { target: introView().target }); applyCam();
+  tweenCam(R.view, INTRO_DUR, { exp: true, intro: true, ease: t => easeInOutCubic(smooth(0, 1, t * 1.08 - .04)), done: () => {
+    state = 'guess'; unlockCam(); ui.form.className = ''; ui.gin.disabled = false; ui.reset.classList.add('show');
+    if (!isMobile) ui.gin.focus();
+  } });
+}
+
+function submitGuess() {
+  if (state !== 'guess' || !guessDigits || Number(guessDigits) <= 0) return;
+  ensureAudio();
+  const guess = Number(guessDigits), acc = accuracy(guess, R.answer);
+  R.guess = guess; R.acc = acc;
+  DB.day.rounds[R.idx] = { id: R.obj.id, guess, answer: R.answer, acc };
+  if (DB.day.rounds.filter(Boolean).length >= DAILY.length && !DB.day.done) completeDay();
+  save();
+  state = 'fill'; ui.gin.blur(); lockCam();
+  ui.form.className = 'gone'; ui.reset.classList.remove('show'); ui.qwrap.classList.add('away');
+  ui.cnum.textContent = '0'; ui.counter.classList.add('show');
+  beginFill(false);
+}
+
+function beginFill(instant) {
+  const spec = R.model.fill, b = spec.bounds;
+  R.fill = makeFill(spec, R.answer, R.objSize, R.rng); scene.add(R.fill.group);
+  R.line = makeGuessLine(spec, R.fill, R.guess, R.answer, R.objSize); scene.add(R.line.mesh);
+  ui.guessTag.textContent = R.line.capped ? 'your guess ↑ (way above)' : R.line.over ? 'your guess (over the top)' : 'your guess';
+  const shells = []; R.model.group.traverse(n => n.userData.shell && shells.push(n));
+  R.shells = shells; R.shellT = 0;
+  if (instant) { R.fill.finish(); setShellOpacity(R.model.closed ? .28 : 1); return; }
+  const top = new V3((b.minX + b.maxX) / 2, lerp(b.y0, b.y1, .45), (b.minZ + b.maxZ) / 2);
+  const fv = { target: top, dist: R.view.dist, polar: R.model.closed ? .66 : .78, az: camS.az };
+  tweenCam(fv, CAM_FILL_DUR, { done: () => { R.pouring = true; fillTone(FILL_DUR); } });
+  ui.guessTag.classList.add('show');
+}
+function setShellOpacity(o) { for (const m of R.shells) { const t = o < .999, mt = m.material;
+  if (mt.transparent !== t) { mt.transparent = t; mt.depthWrite = !t; mt.needsUpdate = true; } // recompile: opaque shaders force alpha = 1
+  mt.opacity = o; m.castShadow = o > .6; } }
+
+let lastCount = 0, tickT = 0;
+function updateFill(dt) {
+  if (!R || !R.fill || state !== 'fill') return;
+  if (R.model.closed && R.shellT < 1) { R.shellT = Math.min(1, R.shellT + dt / .7); setShellOpacity(lerp(1, .28, easeInOutSine(R.shellT))); }
+  if (!R.pouring) return;
+  R.fill.update(dt);
+  ui.cnum.textContent = fmt(R.fill.count);
+  tickT -= dt; if (R.fill.count !== lastCount && tickT <= 0) { tick(); tickT = .07; } lastCount = R.fill.count;
+  if (R.fill.done) finishFill();
+}
+function finishFill() {
+  R.pouring = false; state = 'result';
+  ui.cnum.textContent = fmt(R.answer);
+  unlockCam(); ui.reset.classList.add('show');
+  showCard(); chime(R.acc >= 80);
+  if (R.acc >= 95) { confetti(); }
+}
+
+function showCard() {
+  const { guess, answer, acc, idx, obj } = R, v = verdict(guess, answer, acc);
+  $('rAcc').textContent = acc + '%'; $('rLabel').textContent = v.label; $('rSub').textContent = v.sub;
+  $('rGuess').textContent = fmt(guess); $('rAns').textContent = fmt(answer); $('rFact').textContent = obj.fact;
+  $('bNext').textContent = idx < DAILY.length - 1 ? 'Next' : 'See score';
+  $('stamp').className = 'stamp' + (acc >= 95 ? ' show' : '');
+  setTimeout(() => ui.counter.classList.remove('show'), 300);
+  ui.card.className = 'pe show'; renderProgress(idx + 1);
+}
+function hideCard() { if (ui.card.classList.contains('show')) { ui.card.className = 'pe hide'; } }
+$('bNext').addEventListener('click', () => {
+  if (state !== 'result') return;
+  if (R.idx < DAILY.length - 1) startRound(R.idx + 1);
+  else { hideCard(); state = 'done'; ui.results.classList.add('show'); openEnd(); }
+});
+ui.results.addEventListener('click', openEnd);
+
+/* ===================== day completion, stats, share ===================== */
+const dayTotal = () => DB.day.rounds.reduce((s, r) => s + (r ? r.acc : 0), 0);
+function completeDay() {
+  const st = DB.stats, total = dayTotal();
+  DB.day.done = true;
+  if (st.last !== TODAY) { st.streak = st.last === yesterdayOf(TODAY) ? st.streak + 1 : 1; st.last = TODAY; st.played++; st.total += total; st.best = Math.max(st.best, total); st.maxStreak = Math.max(st.maxStreak, st.streak); }
+}
+const curStreak = () => { const st = DB.stats; return st.last === TODAY || st.last === yesterdayOf(TODAY) ? st.streak : 0; };
+const shareText = () => `Scoople No. ${PUZZLE_NO} · ${dayTotal()}/500\n${DB.day.rounds.map(r => emoji(r.acc)).join('')}`;
+function openEnd() {
+  $('eT').textContent = `scoople No. ${PUZZLE_NO}`; $('eTotal').textContent = dayTotal();
+  $('eEmo').textContent = DB.day.rounds.map(r => emoji(r.acc)).join(' ');
+  $('eRows').innerHTML = DB.day.rounds.map(r => { const o = OBJECTS.find(x => x.id === r.id) || { name: r.id };
+    return `<div class="row"><span class="e">${emoji(r.acc)}</span><div class="nm"><b>${o.name}</b><span>guessed ${fmt(r.guess)} · answer ${fmt(r.answer)}</span></div><span class="p">${r.acc}%</span></div>`; }).join('');
+  const st = DB.stats;
+  $('eStats').innerHTML = `<div><b>${curStreak()}</b><span>day streak</span></div><div><b>${st.maxStreak}</b><span>best streak</span></div><div><b>${st.played}</b><span>played</span></div>`;
+  openModal('mEnd'); updateCountdown();
+}
+function updateCountdown() { const n = new Date(), t = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1) - n;
+  const h = t / 36e5 | 0, m = t / 6e4 % 60 | 0, s = t / 1e3 % 60 | 0; $('eNext').textContent = `next scoople in ${pad(h)}:${pad(m)}:${pad(s)}`; }
+setInterval(() => { if ($('mEnd').classList.contains('show')) updateCountdown(); }, 1000);
+$('bShare').addEventListener('click', async () => {
+  const text = shareText();
+  if (navigator.share && isMobile) { try { await navigator.share({ text }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
+  catch (e) { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Copied to clipboard'); } catch (e2) { toast('Could not copy'); } ta.remove(); }
+});
+function openStats() {
+  const st = DB.stats, avg = st.played ? Math.round(st.total / st.played) : 0;
+  $('statGrid').innerHTML = [[st.played, 'played'], [avg, 'avg score'], [st.best, 'best score'], [curStreak(), 'streak'], [st.maxStreak, 'max streak']]
+    .map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join('');
+  const rs = DB.day.rounds.filter(Boolean);
+  $('statToday').textContent = rs.length ? `today: ${rs.map(r => emoji(r.acc)).join(' ')}  ${dayTotal()} pts` : 'play today to start your streak';
+  openModal('mStats');
+}
+let toastT; function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+
+/* modals */
+let onHelpClose = null;
+function openModal(id) { $(id).classList.add('show'); }
+function closeModal(id) { $(id).classList.remove('show'); if (id === 'mHelp' && onHelpClose) { const f = onHelpClose; onHelpClose = null; f(); } }
+document.querySelectorAll('.modal').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) closeModal(m.id); });
+});
+addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal.show').forEach(m => closeModal(m.id)); });
+$('bHelp').addEventListener('click', () => openModal('mHelp'));
+$('bStats').addEventListener('click', openStats);
+$('bSound').addEventListener('click', () => { ensureAudio(); setMuted(!muted); if (!muted) plop(1, .2); });
+
+/* ===================== confetti ===================== */
+const cc = $('confetti'), cx = cc.getContext('2d'); let confs = [];
+function confetti() {
+  if (reduceMotion) return; const W = innerWidth, cols = ['#F08FAB', '#F4BC5B', '#8EC6E6', '#BFEAD4', '#ffffff', '#A9745B'];
+  for (let i = 0; i < 150; i++) confs.push({ x: W / 2 + (Math.random() - .5) * W * .5, y: innerHeight * .25, vx: (Math.random() - .5) * 9, vy: -6 - Math.random() * 9,
+    r: Math.random() * 6.28, vr: (Math.random() - .5) * .3, w: 6 + Math.random() * 6, h: 4 + Math.random() * 5, c: cols[i % cols.length], life: 2.6 + Math.random() });
+}
+function drawConfetti(dt) {
+  if (!confs.length) { if (cc.dataset.d) { cx.clearRect(0, 0, cc.width, cc.height); delete cc.dataset.d; } return; }
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  if (cc.width !== innerWidth * dpr) { cc.width = innerWidth * dpr; cc.height = innerHeight * dpr; }
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, innerWidth, innerHeight); cc.dataset.d = 1;
+  confs = confs.filter(p => (p.life -= dt) > 0 && p.y < innerHeight + 40);
+  for (const p of confs) { p.vy += 22 * dt; p.vx *= .99; p.x += p.vx * dt * 60; p.y += p.vy * dt * 60 * .5; p.r += p.vr;
+    cx.save(); cx.translate(p.x, p.y); cx.rotate(p.r); cx.globalAlpha = Math.min(1, p.life); cx.fillStyle = p.c; cx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2))); cx.restore(); }
+}
+
+/* ===================== screen labels ===================== */
+const tmp = new V3();
+function toScreen(v) { tmp.copy(v).project(cam); return { x: (tmp.x + 1) / 2 * innerWidth, y: (1 - tmp.y) / 2 * innerHeight, ok: tmp.z < 1 && tmp.z > -1 }; }
+function updateLabels() {
+  if (!R) return;
+  const s = toScreen(heroScoop.position), edge = toScreen(tmp.copy(heroScoop.position).addScaledVector(cam.up, SCOOP_R));
+  const rp = Math.abs(edge.y - s.y), tag = ui.scoopTag, show = s.ok && state !== 'idle';
+  tag.classList.toggle('show', show);
+  if (show) {
+    const tw = tag.offsetWidth || 70, th = tag.offsetHeight || 26, off = rp + 26;
+    let tx = s.x + off * .7, ty = s.y - off - th; let left = false;
+    if (tx + tw > innerWidth - 8) { tx = s.x - off * .7 - tw; left = true; }
+    tx = clamp(tx, 8, innerWidth - tw - 8); ty = clamp(ty, 70, innerHeight - th - 8);
+    tag.style.transform = `translate(${tx}px,${ty}px)`;
+    const ax = left ? tx + tw - 10 : tx + 10, ay = ty + th;
+    ui.line.setAttribute('x1', ax); ui.line.setAttribute('y1', ay);
+    const dx = s.x - ax, dy = s.y - ay, dl = Math.hypot(dx, dy) || 1, stop = Math.min(rp + 3, dl);
+    ui.line.setAttribute('x2', s.x - dx / dl * stop); ui.line.setAttribute('y2', s.y - dy / dl * stop);
+    ui.dot.setAttribute('cx', s.x - dx / dl * stop); ui.dot.setAttribute('cy', s.y - dy / dl * stop);
+    const lo = rp > 60 ? 0 : 1; ui.line.setAttribute('opacity', lo); ui.dot.setAttribute('opacity', rp < 6 ? 1 : 0);
+  } else { ui.line.setAttribute('opacity', 0); ui.dot.setAttribute('opacity', 0); }
+  if (R.line && ui.guessTag.classList.contains('show')) {
+    let best = null, bd = Infinity; for (const p of R.line.pts) { const d = p.distanceToSquared(cam.position); if (d < bd) { bd = d; best = p; } }
+    const g = toScreen(best), gt = ui.guessTag, w = gt.offsetWidth || 80;
+    gt.style.transform = `translate(${clamp(g.x - w / 2, 8, innerWidth - w - 8)}px,${clamp(g.y + 10, 70, innerHeight - 40)}px)`;
+    gt.style.visibility = g.ok ? 'visible' : 'hidden';
+  }
+}
+
+/* ===================== main loop ===================== */
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  stepCam(dt);
+  if (controls.enabled) controls.update();
+  const d = cam.position.distanceTo(controls.enabled ? controls.target : camS.target);
+  cam.near = Math.max(.002, d * .01); cam.far = d * 6 + (R ? R.objSize * 4 : 100); cam.updateProjectionMatrix();
+  updateFill(dt);
+  renderer.render(scene, cam);
+  updateLabels(); drawConfetti(dt);
+  requestAnimationFrame(frame);
+}
+
+/* ===================== boot ===================== */
+function boot() {
+  const done = DB.day.rounds.filter(Boolean).length;
+  if (done >= DAILY.length) {             // already finished today: show the last object full + the score
+    const i = DAILY.length - 1, r = DB.day.rounds[i];
+    setupRound(i); setQuestion(R.obj); renderProgress(DAILY.length);
+    R.guess = r.guess; R.acc = r.acc; beginFill(true);
+    Object.assign(camS, R.view); camS.target = R.view.target.clone(); applyCam(); unlockCam();
+    state = 'done'; ui.form.className = 'gone'; ui.qwrap.classList.add('away'); ui.reset.classList.add('show'); ui.results.classList.add('show');
+    ui.guessTag.classList.add('show');
+    openEnd(); return;
+  }
+  const go = () => startRound(done);
+  if (!DB.seenHelp) { DB.seenHelp = true; save(); setupRound(done); setQuestion(R.obj); renderProgress(done); Object.assign(camS, introView()); applyCam(); onHelpClose = go; openModal('mHelp'); }
+  else go();
+}
+boot();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
