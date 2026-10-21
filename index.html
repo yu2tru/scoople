@@ -456,13 +456,13 @@ sun.castShadow = true; sun.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ?
 sun.shadow.bias = -.0004; scene.add(sun, sun.target);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ color: 0x7a3a1c, opacity: .2, depthWrite: false }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
-const groundU = { uHC: { value: new THREE.Vector2() }, uHR: { value: 0 }, uIsl: { value: new THREE.Vector4() }, uIslE: { value: 0 } };
+const groundU = { uHC: { value: new THREE.Vector2() }, uHR: { value: 0 }, uIsl: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) }, uIslN: { value: 0 }, uIslE: { value: 0 } };
 Object.assign(ground.material, { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
 ground.material.onBeforeCompile = sh => {   // no shadow inside the floor hole, except on the object's own pedestal
   Object.assign(sh.uniforms, groundU);
   sh.vertexShader = 'varying vec2 vGW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGW = (modelMatrix * vec4(transformed, 1.0)).xz;');
-  sh.fragmentShader = 'uniform vec2 uHC; uniform float uHR; uniform vec4 uIsl; uniform float uIslE; varying vec2 vGW;\n' + sh.fragmentShader.replace('void main() {',
-    'void main() {\n vec2 q = vGW - uIsl.xy; bool isl = uIslE > .5 ? dot(q / uIsl.zw, q / uIsl.zw) <= 1. : (abs(q.x) <= uIsl.z && abs(q.y) <= uIsl.w);\n if (uHR > 0. && distance(vGW, uHC) < uHR && !isl) discard;');
+  sh.fragmentShader = 'uniform vec2 uHC; uniform float uHR; uniform vec4 uIsl[16]; uniform int uIslN; uniform float uIslE; varying vec2 vGW;\n' + sh.fragmentShader.replace('void main() {',
+    'void main() {\n if (uHR > 0. && distance(vGW, uHC) < uHR) { bool isl = false;\n  for (int i = 0; i < 16; i++) { if (i >= uIslN) break; vec2 q = vGW - uIsl[i].xy;\n   if (uIslE > .5 ? dot(q / uIsl[i].zw, q / uIsl[i].zw) <= 1. : (abs(q.x) <= uIsl[i].z && abs(q.y) <= uIsl[i].w)) isl = true; }\n  if (!isl) discard; }');
 };
 
 const controls = new OrbitControls(cam, canvas);
@@ -1127,12 +1127,16 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
 
   // ---- the floor cut (for over-guesses) ----
   const D = objSize * .7;
-  const foot = model.footprint || [[objBox.min.x, objBox.min.z], [objBox.max.x, objBox.min.z], [objBox.max.x, objBox.max.z], [objBox.min.x, objBox.max.z]];
-  const footR = Math.max(...foot.map(([x, z]) => Math.hypot(x - cx, z - cz)));
+  // the pedestal left standing when the floor opens: the model's footprint, or just the parts touching the ground
+  const rects = model.footprint ? [] : (model.contacts && model.contacts.length ? model.contacts : [[objBox.min.x, objBox.min.z, objBox.max.x, objBox.max.z]]);
+  const foot = model.footprint;
+  const footR = foot ? Math.max(...foot.map(([x, z]) => Math.hypot(x - cx, z - cz))) : Math.max(...rects.flatMap(r => [Math.hypot(r[0] - cx, r[1] - cz), Math.hypot(r[2] - cx, r[1] - cz), Math.hypot(r[0] - cx, r[3] - cz), Math.hypot(r[2] - cx, r[3] - cz)]));
   let holeR = 0, holeOn = false;
-  const inIsland = (x, z) => inPoly(x, z, foot);
-  { const xs = foot.map(p => p[0]), zs = foot.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
-    P0.isl = [(x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2]; P0.islE = model.footprintRound ? 1 : 0; P0.holeC = [cx, cz]; }
+  const inIsland = (x, z) => foot ? inPoly(x, z, foot) : rects.some(r => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]);
+  if (foot) { const xs = foot.map(p => p[0]), zs = foot.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+    P0.isl = [[(x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2]]; }
+  else P0.isl = rects.map(r => [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2, (r[2] - r[0]) / 2, (r[3] - r[1]) / 2]);
+  P0.islE = foot && model.footprintRound ? 1 : 0; P0.holeC = [cx, cz];
   const hasGround = (x, z) => !holeOn || (x - cx) ** 2 + (z - cz) ** 2 > holeR * holeR || inIsland(x, z);
   const cut = new THREE.Group(); cut.visible = false; group.add(cut);
   const occl = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
@@ -1143,9 +1147,9 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const pitM = new THREE.MeshStandardMaterial({ color: PIT_COLOR, roughness: 1, side: THREE.BackSide });
   const pit = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, D, 64, 1, true), pitM); pit.position.set(cx, -D / 2, cz); cut.add(pit);
   const pitFloor = new THREE.Mesh(new THREE.CircleGeometry(1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#2e1a12' })); pitFloor.position.set(cx, -D, cz); cut.add(pitFloor);
-  const islandShape = shapeFrom(foot);
-  const island = new THREE.Mesh(new THREE.ExtrudeGeometry(islandShape, { depth: D, bevelEnabled: false }).rotateX(Math.PI / 2),
-    [new THREE.MeshBasicMaterial({ color: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#F7DCC8', toneMapped: false }), new THREE.MeshStandardMaterial({ color: '#d9ab8e', roughness: 1 })]);
+  const islandMats = [new THREE.MeshBasicMaterial({ color: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#F7DCC8', toneMapped: false }), new THREE.MeshStandardMaterial({ color: '#d9ab8e', roughness: 1 })];
+  const islandShapes = foot ? [shapeFrom(foot)] : rects.map(r => shapeFrom([[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]));
+  const island = new THREE.Mesh(new THREE.ExtrudeGeometry(islandShapes, { depth: D, bevelEnabled: false }).rotateX(Math.PI / 2), islandMats);
   cut.add(island);
   const setHole = r => { holeR = r; occl.material.uniforms.uR.value = r; pit.scale.set(r, 1, r); pitFloor.scale.set(r, 1, r); };
 
@@ -1283,9 +1287,9 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         holeMax = far; holeOn = true; cut.visible = true; hooks.cutStart && hooks.cutStart(); plop(.45, .25);
       }
       const T1 = reduceMotion ? .3 : .7, T2 = reduceMotion ? 1.2 : 2.0, T3 = reduceMotion ? .3 : .7;
-      if (cutT < T1) setHole(lerp(footR * .9, holeMax, easeInOutCubic(cutT / T1)));
+      if (cutT < T1) setHole(lerp(0, holeMax, easeInOutCubic(cutT / T1)));
       else if (cutT < T1 + T2) setHole(holeMax);
-      else if (cutT < T1 + T2 + T3) { const k = (cutT - T1 - T2) / T3; setHole(lerp(holeMax, footR * .9, easeInOutCubic(k)));
+      else if (cutT < T1 + T2 + T3) { const k = (cutT - T1 - T2) / T3; setHole(lerp(holeMax, 0, easeInOutCubic(k)));
         for (let i = 0; i < n; i++) if (alive[i] && out[i] && py[i] > -rad[i]) scl[i] = 1 - k; }
       else { for (let i = 0; i < n; i++) if (out[i]) { alive[i] = 0; awake[i] = 0; } holeOn = false; cut.visible = false; hooks.cutEnd && hooks.cutEnd(); phase = 'reveal'; pt = 0; }
       P.hole = holeOn ? holeR : 0;
@@ -1307,7 +1311,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     queue.length = 0; qi = 0; P.count = guess; phase = 'reveal'; P.done = true; P.phase = 'real'; draw(0);
   };
   P.dispose = () => { mesh.dispose(); occl.geometry.dispose(); occl.material.dispose(); pit.geometry.dispose(); pitM.dispose(); pitFloor.geometry.dispose(); pitFloor.material.dispose();
-    island.geometry.dispose(); island.material.forEach(m => m.dispose()); if (ov) ov.holeOpen = false; };
+    island.geometry.dispose(); islandMats.forEach(m => m.dispose()); if (ov) ov.holeOpen = false; };
   return P;
 }
 
@@ -1350,7 +1354,7 @@ scene.add(blob);
 
 function disposeRound() {
   if (!R) return;
-  { const on = dimsOn; dimsOn = false; buildDims(); dimsOn = on; }
+  disposeDims();
   scene.remove(R.model.group); if (R.pour) { scene.remove(R.pour.group); R.pour.dispose(); } groundU.uHR.value = 0;
   const kill = o => o.traverse(n => { if (n.geometry && !n.geometry.userData.keep) n.geometry.dispose(); if (n.isInstancedMesh) n.dispose(); if (n.userData.ownMat) n.material.dispose(); });
   kill(R.model.group);
@@ -1365,6 +1369,18 @@ function setupRound(idx) {
   g.traverse(n => { if (n.userData.shell) { n.material = n.material.clone(); n.userData.ownMat = true; } });
   const box = new THREE.Box3().setFromObject(g), size = box.getSize(new V3()), center = box.getCenter(new V3());
   const objSize = Math.max(size.x, size.y, size.z);
+  // boxes of every visible part (used to keep the size lines clear) and the parts that touch the ground
+  g.updateMatrixWorld(true);
+  const meshBoxes = [], contacts = [], thr = objSize * .012 + .002;
+  g.traverseVisible(n => { if (!n.isMesh) return; const bx = new THREE.Box3().setFromObject(n); if (bx.isEmpty()) return; meshBoxes.push(bx);
+    if (bx.min.y <= thr) contacts.push([bx.min.x - objSize * .01, bx.min.z - objSize * .01, bx.max.x + objSize * .01, bx.max.z + objSize * .01]); });
+  while (contacts.length > 16) {   // merge the closest pair until it fits the floor shader
+    let bi = 0, bj = 1, bc = Infinity;
+    for (let i = 0; i < contacts.length; i++) for (let j = i + 1; j < contacts.length; j++) { const a = contacts[i], c = contacts[j];
+      const u = (Math.max(a[2], c[2]) - Math.min(a[0], c[0])) * (Math.max(a[3], c[3]) - Math.min(a[1], c[1])) - (a[2] - a[0]) * (a[3] - a[1]) - (c[2] - c[0]) * (c[3] - c[1]); if (u < bc) { bc = u; bi = i; bj = j; } }
+    const a = contacts[bi], c = contacts[bj]; contacts[bi] = [Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.max(a[2], c[2]), Math.max(a[3], c[3])]; contacts.splice(bj, 1);
+  }
+  model.contacts = contacts;
   // scoop sits just to the right of the object, as seen from the default view
   const az = model.view.az, right = new V3(Math.cos(az), 0, -Math.sin(az)), toward = new V3(Math.sin(az), 0, Math.cos(az));
   const he = Math.abs(right.x) * size.x / 2 + Math.abs(right.z) * size.z / 2, hf = Math.abs(toward.x) * size.x / 2 + Math.abs(toward.z) * size.z / 2;
@@ -1385,7 +1401,7 @@ function setupRound(idx) {
   ground.scale.setScalar(objSize * 40); ground.position.set(center.x, 0, center.z);
   controls.minDistance = sphere.radius * .35; controls.maxDistance = view.dist * 2.2; controls.target.copy(target); controls.enableZoom = true;
   const rng = mulberry32(xmur3(TODAY + obj.id)());
-  R = { idx, obj, answer, model, size, center, box, objSize, view, rng, sPos, fill: null, line: null, guess: null, minD: sphere.radius * .35, scoopZoom: false };
+  R = { idx, obj, answer, model, size, center, box, objSize, meshBoxes, view, rng, sPos, fill: null, line: null, guess: null, minD: sphere.radius * .35, scoopZoom: false };
   buildDims();
   return R;
 }
@@ -1429,44 +1445,73 @@ addEventListener('keydown', e => {   // a physical keyboard works too
 });
 const freeState = () => state === 'guess' || state === 'result' || state === 'done';
 function showChips(on) { ui.reset.classList.toggle('show', on); $('bDims').classList.toggle('show', on); }
-/* Size guides: three dimension lines (width, height, length of the space being filled), meeting at one corner */
+/* Size guides: three dimension lines (length, width, height of the space being filled) that grow out of one shared corner */
 let dimsOn = false;
+const floorClip = [new THREE.Plane(new V3(0, 1, 0), 0)];   // nothing pokes through the floor
 function unitLabel(m) { return m < 1 ? `${Math.round(m * 100)} cm` : m < 10 ? `${m.toFixed(1)} m` : `${Math.round(m)} m`; }
-function labelSprite(text, px) {
-  const c = document.createElement('canvas'), g = c.getContext('2d'), f = `900 ${px * 2}px ${getComputedStyle(document.body).fontFamily}`;
-  g.font = f; const w = Math.ceil(g.measureText(text).width) + px * 2.4, h = px * 3.2; c.width = w; c.height = h;
-  g.font = f; g.fillStyle = 'rgba(29,26,25,.78)'; g.beginPath(); g.roundRect(0, 0, w, h, h / 2); g.fill();
-  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + px * .1);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, sizeAttenuation: false, depthTest: true, depthWrite: false, transparent: true }));
-  sp.scale.set(.027 * w / h, .027, 1); sp.renderOrder = 6; return sp;
+function labelSprite(text) {
+  const px = 44, c = document.createElement('canvas'), g = c.getContext('2d'), f = `900 ${px}px ${getComputedStyle(document.body).fontFamily}`;
+  g.font = f; const w = Math.ceil(g.measureText(text).width + px * 1.3), h = Math.ceil(px * 1.6); c.width = w; c.height = h;
+  g.font = f; g.fillStyle = 'rgba(29,26,25,.62)'; g.beginPath(); g.roundRect(0, 0, w, h, h / 2); g.fill();
+  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + px * .04);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, sizeAttenuation: false, depthWrite: false, transparent: true, opacity: 0, clippingPlanes: floorClip }));
+  sp.scale.set(.03 * w / h, .03, 1); sp.renderOrder = 6; sp.frustumCulled = false; return sp;
 }
+function disposeDims() {
+  if (!R || !R.dims) return; scene.remove(R.dims.grp);
+  R.dims.grp.traverse(n => { if (n.material) { n.material.map && n.material.map.dispose(); n.material.dispose(); } });
+  R.dims.geo.dispose(); R.dims = null;
+}
+function placeSeg(m, a, c) { const d = new V3().subVectors(c, a), l = d.length(); m.position.copy(a).add(c).multiplyScalar(.5); m.scale.y = Math.max(l, 1e-6); if (l > 1e-9) m.quaternion.setFromUnitVectors(_up, d.divideScalar(l)); }
 function buildDims() {
-  if (R.dims) { scene.remove(R.dims); R.dims.traverse(n => { if (n.geometry && !n.geometry.userData.keep) n.geometry.dispose(); if (n.material) { n.material.map && n.material.map.dispose(); n.material.dispose(); } }); R.dims = null; }
-  if (!dimsOn) return;
-  const b = R.model.fill.bounds, box = R.box, o = R.objSize * .06, rr = Math.max(R.objSize * .0028, .0015);
-  const az = R.view.az, fx = Math.sin(az), fz = Math.cos(az), rx = Math.cos(az), rz = -Math.sin(az);
-  let best = null; for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const sc = sx * fx + sz * fz - (sx * rx + sz * rz); if (!best || sc > best[2]) best = [sx, sz, sc]; }
-  const [sx, sz] = best;   // the front-left corner, as seen from the starting view
-  const xC = (sx > 0 ? box.max.x : box.min.x) + sx * o, zC = (sz > 0 ? box.max.z : box.min.z) + sz * o, y0 = b.y0, y1 = b.y1;
-  const grp = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: 0x1d1a19, transparent: true, opacity: .5, depthWrite: false }), faint = mat.clone(); faint.opacity = .22;
-  const seg = (a, c, m, r = rr) => { const d = new V3().subVectors(c, a), msh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 8), m);
-    msh.position.copy(a).add(c).multiplyScalar(.5); msh.scale.y = Math.max(d.length(), 1e-6); msh.quaternion.setFromUnitVectors(_up, d.normalize()); msh.renderOrder = 5; grp.add(msh); };
-  const tick = (p, axis) => { const t = rr * 7, a = p.clone(), c = p.clone(); a[axis] -= t; c[axis] += t; seg(a, c, mat); };
-  const lines = [   // [from, to, tick axis, length]
-    [new V3(b.minX, y0, zC), new V3(b.maxX, y0, zC), 'y', b.maxX - b.minX],
-    [new V3(xC, y0, b.minZ), new V3(xC, y0, b.maxZ), 'y', b.maxZ - b.minZ],
-    [new V3(xC, y0, zC), new V3(xC, y1, zC), 'x', y1 - y0],
-  ];
-  for (const [a, c, ax, len] of lines) {
-    seg(a, c, mat); tick(a, ax); tick(c, ax);
-    const lab = labelSprite(unitLabel(len), 22); lab.position.copy(a).add(c).multiplyScalar(.5); grp.add(lab);
+  disposeDims(); if (!dimsOn || !R) return;
+  const b = R.model.fill.bounds, S0 = R.objSize, m = S0 * .025, step = S0 * .01, rr = Math.max(S0 * .0025, .0012), boxes = R.meshBoxes, tmpP = new V3();
+  const clear = (a, c) => { for (let i = 0; i <= 30; i++) { tmpP.lerpVectors(a, c, i / 30); for (const bx of boxes) if (bx.distanceToPoint(tmpP) < m) return false; } return true; };
+  const y0 = b.y0, y1 = b.y1, az = R.view.az;
+  let best = null;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {   // try each corner; keep the one that can sit closest to the object
+    const xE = sx > 0 ? b.maxX : b.minX, zE = sz > 0 ? b.maxZ : b.minZ;
+    let oz = m, ox = m;
+    while (oz < S0 && !clear(new V3(b.minX, y0, zE + sz * oz), new V3(b.maxX, y0, zE + sz * oz))) oz += step;
+    while (ox < S0 && !clear(new V3(xE + sx * ox, y0, b.minZ), new V3(xE + sx * ox, y0, b.maxZ))) ox += step;
+    while (ox < S0 * 1.5 && !clear(new V3(xE + sx * ox, y0, zE + sz * oz), new V3(xE + sx * ox, y1, zE + sz * oz))) { ox += step; oz += step; }
+    const left = -(sx * Math.cos(az) - sz * Math.sin(az)), front = sx * Math.sin(az) + sz * Math.cos(az);   // as seen from the starting view
+    const score = ox + oz - left * S0 * .12 - front * S0 * .02;
+    if (!best || score < best.score) best = { score, sx, sz, xE, zE, xC: xE + sx * ox, zC: zE + sz * oz };
   }
-  seg(new V3(sx > 0 ? b.maxX : b.minX, y0, zC), new V3(xC, y0, zC), faint, rr * .7);   // dotted-in extensions to the shared corner
-  seg(new V3(xC, y0, sz > 0 ? b.maxZ : b.minZ), new V3(xC, y0, zC), faint, rr * .7);
-  scene.add(grp); R.dims = grp;
+  const { sx, sz, xE, zE, xC, zC } = best, C = new V3(xC, y0, zC);
+  const grp = new THREE.Group(), geo = new THREE.CylinderGeometry(1, 1, 1, 8);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x1d1a19, transparent: true, opacity: .32, depthWrite: false, clippingPlanes: floorClip });
+  const paths = [];
+  const addPath = (F, A, B, tickAxis) => {   // a line from the corner C out to F; [A, B] is the part being measured
+    const len = C.distanceTo(F) || 1, line = new THREE.Mesh(geo, mat); line.scale.set(rr, 1, rr); line.renderOrder = 5; grp.add(line);
+    const ticks = [A, B].map(P => { const t = new THREE.Mesh(geo, mat), a = P.clone(), c = P.clone(); a[tickAxis] -= rr * 7; c[tickAxis] += rr * 7;
+      placeSeg(t, a, c); t.scale.x = t.scale.z = rr; t.renderOrder = 5; t.visible = false; grp.add(t); return { m: t, t: C.distanceTo(P) / len }; });
+    const label = labelSprite(unitLabel(A.distanceTo(B))); label.position.copy(A).add(B).multiplyScalar(.5); grp.add(label);
+    paths.push({ F, line, ticks, label, tm: C.distanceTo(label.position) / len });
+  };
+  const xFar = sx > 0 ? b.minX : b.maxX, zFar = sz > 0 ? b.minZ : b.maxZ;
+  addPath(new V3(xFar, y0, zC), new V3(xE, y0, zC), new V3(xFar, y0, zC), 'y');
+  addPath(new V3(xC, y0, zFar), new V3(xC, y0, zE), new V3(xC, y0, zFar), 'y');
+  addPath(new V3(xC, y1, zC), new V3(xC, y0, zC), new V3(xC, y1, zC), 'x');
+  scene.add(grp); R.dims = { grp, geo, paths, C, t: 0, dir: 1 };
 }
-$('bDims').addEventListener('click', () => { dimsOn = !dimsOn; $('bDims').classList.toggle('on', dimsOn); $('bDims').setAttribute('aria-pressed', dimsOn); if (R) buildDims(); });
+function animDims(dt) {
+  const D = R && R.dims; if (!D) return;
+  D.t = clamp(D.t + D.dir * dt / (reduceMotion ? .2 : .8), 0, 1);
+  const e = easeInOutCubic(D.t);
+  for (const p of D.paths) {
+    placeSeg(p.line, D.C, D.C.clone().lerp(p.F, e)); p.line.scale.x = p.line.scale.z = p.ticks[0].m.scale.x; p.line.visible = e > .001;
+    for (const tk of p.ticks) tk.m.visible = e >= tk.t - 1e-4;
+    p.label.material.opacity = smooth(p.tm - .02, p.tm + .14, e);   // the label fades in once the line reaches it
+  }
+  if (D.dir < 0 && D.t <= 0) disposeDims();
+}
+$('bDims').addEventListener('click', () => {
+  dimsOn = !dimsOn; $('bDims').classList.toggle('on', dimsOn); $('bDims').setAttribute('aria-pressed', dimsOn);
+  if (!R) return; if (dimsOn) { if (R.dims) R.dims.dir = 1; else buildDims(); } else if (R.dims) R.dims.dir = -1;
+});
 function setOrbitLimits(zoomed) {
   controls.minDistance = zoomed ? SCOOP_R * 3 : R.minD; controls.maxDistance = R.view.dist * 2.2;
   controls.target.copy(zoomed ? heroScoop.position : R.view.target);
@@ -1713,7 +1758,8 @@ function frame(now) {
     const ty = controls.target.y, dd = cam.position.distanceTo(controls.target);
     controls.maxPolarAngle = Math.acos(clamp((SCOOP_R * .15 - ty) / Math.max(dd, 1e-6), -1, 1));
   } else controls.maxPolarAngle = Math.PI / 2;
-  if (R && R.pour) { const P = R.pour; groundU.uHR.value = P.hole || 0; groundU.uHC.value.set(...P.holeC); groundU.uIsl.value.set(...P.isl); groundU.uIslE.value = P.islE; }
+  if (R && R.pour) { const P = R.pour; groundU.uHR.value = P.hole || 0; groundU.uHC.value.set(...P.holeC); P.isl.forEach((v, i) => groundU.uIsl.value[i].set(...v)); groundU.uIslN.value = P.isl.length; groundU.uIslE.value = P.islE; }
+  animDims(dt);
   cam.near = Math.max(.002, d * .01); cam.far = d * 6 + (R ? R.objSize * 4 : 100); cam.updateProjectionMatrix();
   updateFill(dt);
   renderer.render(scene, cam);
