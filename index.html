@@ -180,7 +180,6 @@ button.row:active{transform:scale(.98)}
 .hero video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 60%;
   -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 16%,#000 62%,transparent 100%),linear-gradient(90deg,transparent 0%,#000 10%,#000 90%,transparent 100%);
   -webkit-mask-composite:source-in;mask-image:linear-gradient(180deg,transparent 0%,#000 16%,#000 62%,transparent 100%),linear-gradient(90deg,transparent 0%,#000 10%,#000 90%,transparent 100%);mask-composite:intersect}
-.hero-name{position:absolute;z-index:1;left:18px;top:calc(env(safe-area-inset-top) + 8px);font-weight:900;font-size:42px;letter-spacing:-.065em;line-height:1}
 .home-body{flex:none;padding:0 14px}
 .home-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
 .home-date{font-weight:800;font-size:15px;color:#6f625c;letter-spacing:-.02em}
@@ -203,7 +202,9 @@ button.row:active{transform:scale(.98)}
 .tile[disabled]{opacity:.55;cursor:default}
 .tiles2{display:grid;grid-template-columns:1.25fr 1fr .8fr;gap:7px}
 .tiles2 .tile{background:var(--card);min-height:54px;box-shadow:0 2px 0 rgba(29,26,25,.04)}
-#app .word{cursor:pointer;pointer-events:auto}
+#app .word{visibility:hidden}   /* the real wordmark is #logo, laid over this spot on every page */
+#logo{position:fixed;left:0;top:0;z-index:13;font-weight:900;font-size:30px;letter-spacing:-.06em;line-height:1;color:var(--ink);cursor:pointer;
+  -webkit-user-select:none;user-select:none;padding:6px 8px;margin:-6px -8px;will-change:transform}
 #err{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:30px;font-weight:800}
 @media (prefers-reduced-motion: reduce){
   #card.show{animation:fade .25s forwards;transform:none}
@@ -317,12 +318,12 @@ button.row:active{transform:scale(.98)}
   </div>
 </div>
 
+<div id="logo" role="button" aria-label="Home">scoople</div>
 <div id="home" aria-label="Home">
   <div class="home-col">
     <div class="hero">
       <!-- Gameplay clip: drop a recording at assets/hero.mp4 and it plays here; the poster shows until then. -->
       <video id="heroVid" autoplay muted loop playsinline preload="auto" poster="assets/hero-placeholder.jpg"><source src="assets/hero.mp4" type="video/mp4"></video>
-      <div class="hero-name">scoople</div>
     </div>
     <div class="home-body">
       <div class="home-row"><div class="home-date" id="hDate"></div>
@@ -361,7 +362,7 @@ button.row:active{transform:scale(.98)}
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.2';
+window.SCOOPLE_BUILD = '2026-10-21.3';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1132,6 +1133,7 @@ function jarModel(o) {
 
 /* Instances are packed so hidden ones cost nothing: call put() for each visible one, then end() */
 function packer(mesh, dummy) { let n = 0; return {
+  get n() { return n; },
   put(x, y, z, s, q, color) { dummy.position.set(x, y, z); if (q) dummy.quaternion.copy(q); else dummy.quaternion.identity(); dummy.scale.setScalar(s);
     dummy.updateMatrix(); mesh.setMatrixAt(n, dummy.matrix); mesh.setColorAt(n, color); n++; },
   end() { mesh.count = n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; n = 0; } }; }
@@ -1146,9 +1148,12 @@ function packer(mesh, dummy) { let n = 0; return {
    Settled balls freeze in place (they become static), which keeps the
    physics cheap: only moving balls are simulated.
    ===================================================================== */
-const MAX_BALLS = isMobile ? 10400 : 16000;   // visible balls per phase
-const PACKING = .55;                       // how tightly loose balls pack
+const MAX_BALLS = isMobile ? 10400 : 16000;   // balls that fill the object (each one stands for 1 or more scoops)
+const PACK_BULK = .6, PACK_WALL = .45;        // how tightly loose balls pack in the middle of a pile, and how much walls (and the open top) thin that out
+const PHASE_MAX = 7;                          // no stage of the pour (your scoops, the spill, the top-up) runs longer than this, in seconds
 const PIT_COLOR = '#5b3626';
+// measured: how many balls each object really holds when poured full, vs. the packing estimate (walls, roofs and odd shapes vary)
+const FILL_FIT = { bathtub: 1.02, urus: .78, bus: .83, pool: .72, colosseum: .95, fishbowl: 1.1, wheelbarrow: 1.08, phonebooth: .87, container: .77, balloon: .93 };
 
 function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const spec = model.fill, inside = spec.inside, b = spec.bounds, H = b.y1 - b.y0;
@@ -1156,57 +1161,57 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
   const group = new THREE.Group(), P0 = {};
 
-  // ---- interior volume, as modeled (balls are sized against this) ----
-  let Vvis = 0; { const NY = 36, NG = 32, bw = b.maxX - b.minX, bd = b.maxZ - b.minZ;
-    for (let j = 0; j < NY; j++) { const y = lerp(b.y0, b.y1, (j + .5) / NY); let c = 0;
-      for (let ix = 0; ix < NG; ix++) for (let iz = 0; iz < NG; iz++) if (inside(b.minX + (ix + .5) * bw / NG, b.minZ + (iz + .5) * bd / NG, y)) c++;
-      Vvis += c / (NG * NG) * bw * bd * H / NY; } }
+  // ---- interior volume and wall area, as modeled (the balls are sized against these) ----
+  let Vvis = 0, Sint = 0;
+  { const G = 44, bw = b.maxX - b.minX, bd = b.maxZ - b.minZ, ex = bw / G, ey = H / G, ez = bd / G, m = new Uint8Array(G * G * G);
+    for (let k = 0; k < G; k++) for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) m[i + G * (j + G * k)] = inside(b.minX + (i + .5) * ex, b.minZ + (k + .5) * ez, b.y0 + (j + .5) * ey) ? 1 : 0;
+    const at = (i, j, k) => i < 0 || j < 0 || k < 0 || i >= G || j >= G || k >= G ? 0 : m[i + G * (j + G * k)];
+    for (let k = 0; k < G; k++) for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) if (m[i + G * (j + G * k)]) { Vvis += ex * ey * ez;
+      Sint += (2 - at(i - 1, j, k) - at(i + 1, j, k)) * ey * ez + (2 - at(i, j - 1, k) - at(i, j + 1, k)) * ex * ez + (2 - at(i, j, k - 1) - at(i, j, k + 1)) * ex * ey; } }
   Vvis = Math.max(Vvis, 1e-9);
-  const rFor = (ratio, nb = MAX_BALLS) => { const pk = PACKING - .6 * clamp(1 - Math.log10(Math.max(nb, 1)) / 3.5, 0, 1);   // few big balls pack worse
-    return Math.min(objSize * .08, Math.cbrt(Vvis / answer * ratio * pk * 3 / (4 * Math.PI))); };
+  // one ball size for the whole pour: `answer` scoops worth of balls fill the object exactly
+  const ratio = Math.max(1, Math.ceil(answer / MAX_BALLS)), Nfill = answer / ratio;
+  let R0 = Math.cbrt(Vvis * PACK_BULK / Nfill * 3 / (4 * Math.PI));
+  for (let k = 0; k < 12; k++) R0 = Math.cbrt(Vvis * PACK_BULK * clamp(1 - PACK_WALL * R0 * Sint / Vvis, .3, 1) / Nfill * 3 / (4 * Math.PI));
+  R0 *= Math.cbrt(model.fit || 1);
 
   // ---- the object's walls as a voxel signed-distance field ----
-  const solid0 = model.solidAt || ((x, y, z) => x > objBox.min.x && x < objBox.max.x && z > objBox.min.z && z < objBox.max.z && y < objBox.max.y && !inside(x, z, y));
-  let leafSolid = false; const leafBoxes = [];
-  if (ov && ov.leaves && ov.open) {   // measure the door leaves fully open, then close them again
+  const solidAt = model.solidAt || ((x, y, z) => x > objBox.min.x && x < objBox.max.x && z > objBox.min.z && z < objBox.max.z && y < objBox.max.y && !inside(x, z, y));
+  // door leaves are solid boxes that swing with the door (checked directly, so they push balls while they move)
+  const leaves = [];
+  if (ov && ov.leaves && ov.open) {
     ov.open(1);
-    for (const lf of ov.leaves) { lf.updateMatrixWorld(true); lf.traverse(n => { if (!n.isMesh || n.isInstancedMesh) return;
-      if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
-      leafBoxes.push({ inv: n.matrixWorld.clone().invert(), box: n.geometry.boundingBox.clone().expandByScalar(.01) });   // each panel in its own (rotated) space
-      objBox = objBox.clone().union(new THREE.Box3().setFromObject(n)); }); }
-    ov.open(0);
+    for (const lf of ov.leaves) { lf.updateMatrixWorld(true); lf.traverse(nd => { if (!nd.isMesh || nd.isInstancedMesh) return;
+      if (!nd.geometry.boundingBox) nd.geometry.computeBoundingBox();
+      leaves.push({ m: nd, box: nd.geometry.boundingBox.clone().expandByScalar(.01), inv: new THREE.Matrix4() });
+      objBox = objBox.clone().union(new THREE.Box3().setFromObject(nd)); }); }
+    ov.open(0); for (const lf of ov.leaves) lf.updateMatrixWorld(true);
   }
-  const _lp = new V3();
-  const solidAt = (x, y, z) => (leafSolid && leafBoxes.some(L => L.box.containsPoint(_lp.set(x, y, z).applyMatrix4(L.inv)))) || solid0(x, y, z) && !(ov && ov.type === 'burst' && ov.holeOpen && Math.hypot(x - ov.at.x, y - ov.at.y, z - ov.at.z) < (ov.w || .4)); // a burst point breaks open
   const vs = objSize / (isMobile ? 56 : 70);
   const ox = objBox.min.x - 2 * vs, oy = -vs, oz = objBox.min.z - 2 * vs;
   const nx = Math.ceil((objBox.max.x - ox) / vs) + 3, ny = Math.ceil((objBox.max.y - oy) / vs) + 3, nz = Math.ceil((objBox.max.z - oz) / vs) + 3;
   const NV = nx * ny * nz, sdf = new Float32Array(NV);
-  const OFF = [];
-  for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-    const o = dx + nx * (dy + ny * dz); if (o < 0) OFF.push([dx, dy, dz, o, Math.hypot(dx, dy, dz)]); }
-  const chamfer = d => {
-    for (let pass = 0; pass < 2; pass++) {
-      const s = pass ? -1 : 1;
-      for (let k0 = 0; k0 < nz; k0++) { const k = pass ? nz - 1 - k0 : k0;
-        for (let j0 = 0; j0 < ny; j0++) { const j = pass ? ny - 1 - j0 : j0;
-          for (let i0 = 0; i0 < nx; i0++) { const i = pass ? nx - 1 - i0 : i0, id = i + nx * (j + ny * k); let v = d[id]; if (v === 0) continue;
-            for (let q = 0; q < OFF.length; q++) { const f = OFF[q], ii = i + s * f[0], jj = j + s * f[1], kk = k + s * f[2];
-              if (ii < 0 || jj < 0 || kk < 0 || ii >= nx || jj >= ny || kk >= nz) continue; const c = d[id + s * f[3]] + f[4]; if (c < v) v = c; }
-            d[id] = v; } } } }
-  };
-  const buildSDF = () => {
+  { const OFF = [];
+    for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const o = dx + nx * (dy + ny * dz); if (o < 0) OFF.push([dx, dy, dz, o, Math.hypot(dx, dy, dz)]); }
+    const chamfer = d => {
+      for (let pass = 0; pass < 2; pass++) {
+        const s = pass ? -1 : 1;
+        for (let k0 = 0; k0 < nz; k0++) { const k = pass ? nz - 1 - k0 : k0;
+          for (let j0 = 0; j0 < ny; j0++) { const j = pass ? ny - 1 - j0 : j0;
+            for (let i0 = 0; i0 < nx; i0++) { const i = pass ? nx - 1 - i0 : i0, id = i + nx * (j + ny * k); let v = d[id]; if (v === 0) continue;
+              for (let q = 0; q < OFF.length; q++) { const f = OFF[q], ii = i + s * f[0], jj = j + s * f[1], kk = k + s * f[2];
+                if (ii < 0 || jj < 0 || kk < 0 || ii >= nx || jj >= ny || kk >= nz) continue; const c = d[id + s * f[3]] + f[4]; if (c < v) v = c; }
+              d[id] = v; } } } }
+    };
     const solid = new Uint8Array(NV), dO = new Float32Array(NV), dI = new Float32Array(NV);
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const id = i + nx * (j + ny * k), x = ox + (i + .5) * vs, y = oy + (j + .5) * vs, z = oz + (k + .5) * vs;
       let sol = solidAt(x, y, z);   // also probe the cell's corners so walls thinner than a cell never leak
       for (let c = 0; !sol && c < 8; c++) sol = solidAt(x + (c & 1 ? .45 : -.45) * vs, y + (c & 2 ? .45 : -.45) * vs, z + (c & 4 ? .45 : -.45) * vs);
-      solid[id] = sol ? 1 : 0;
-      dO[id] = solid[id] ? 0 : 1e9; dI[id] = solid[id] ? 1e9 : 0; }
+      solid[id] = sol ? 1 : 0; dO[id] = sol ? 0 : 1e9; dI[id] = sol ? 1e9 : 0; }
     chamfer(dO); chamfer(dI);
-    for (let id = 0; id < NV; id++) sdf[id] = (solid[id] ? -(Math.min(dI[id], 1e3) - .5) : (Math.min(dO[id], 1e3) - .5)) * vs;
-  };
-  buildSDF();
+    for (let id = 0; id < NV; id++) sdf[id] = (solid[id] ? -(Math.min(dI[id], 1e3) - .5) : (Math.min(dO[id], 1e3) - .5)) * vs; }
   const sample = (x, y, z) => {
     const fx = (x - ox) / vs - .5, fy = (y - oy) / vs - .5, fz = (z - oz) / vs - .5;
     if (fx < 0 || fy < 0 || fz < 0 || fx >= nx - 1 || fy >= ny - 1 || fz >= nz - 1) return 1e9;
@@ -1216,44 +1221,61 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
   };
 
-  // ---- balls ----
+  // ---- door leaves: nearest point on any leaf ----
+  const _lp = new V3(), _lq = new V3(), leafBB = new THREE.Box3(), _bb = new THREE.Box3();
+  let leafOn = false;
+  const syncLeaves = () => { leafBB.makeEmpty();
+    for (const lf of ov.leaves) lf.updateMatrixWorld(true);
+    for (const L of leaves) { L.inv.copy(L.m.matrixWorld).invert(); leafBB.union(_bb.copy(L.box).applyMatrix4(L.m.matrixWorld)); }
+    leafBB.expandByScalar(R0 * 1.2); };
+  const leafNear = (x, y, z) => {   // → distance to the nearest leaf (0 when inside one); the nearest point is left in _lq
+    let best = Infinity, bx = 0, by = 0, bz = 0;
+    for (const L of leaves) { _lp.set(x, y, z).applyMatrix4(L.inv); const B = L.box;
+      if (B.containsPoint(_lp)) { const f = [_lp.x - B.min.x, B.max.x - _lp.x, _lp.y - B.min.y, B.max.y - _lp.y, _lp.z - B.min.z, B.max.z - _lp.z]; let m = 0; for (let k = 1; k < 6; k++) if (f[k] < f[m]) m = k;
+        _lq.copy(_lp); if (m === 0) _lq.x = B.min.x; else if (m === 1) _lq.x = B.max.x; else if (m === 2) _lq.y = B.min.y; else if (m === 3) _lq.y = B.max.y; else if (m === 4) _lq.z = B.min.z; else _lq.z = B.max.z;
+        _lq.applyMatrix4(L.m.matrixWorld); return { d: 0, x: _lq.x, y: _lq.y, z: _lq.z, in: true }; }
+      _lq.copy(_lp).clamp(B.min, B.max).applyMatrix4(L.m.matrixWorld); const d = Math.hypot(x - _lq.x, y - _lq.y, z - _lq.z);
+      if (d < best) { best = d; bx = _lq.x; by = _lq.y; bz = _lq.z; } }
+    return { d: best, x: bx, y: by, z: bz, in: false }; };
+
+  // ---- balls (all the same size) ----
   const CAP = MAX_BALLS * 2 + 64;
   const px = new Float32Array(CAP), py = new Float32Array(CAP), pz = new Float32Array(CAP);
   const qx = new Float32Array(CAP), qy = new Float32Array(CAP), qz = new Float32Array(CAP);   // previous positions
   const vx = new Float32Array(CAP), vy = new Float32Array(CAP), vz = new Float32Array(CAP);
-  const rad = new Float32Array(CAP), scl = new Float32Array(CAP), still = new Float32Array(CAP);
-  const alive = new Uint8Array(CAP), awake = new Uint8Array(CAP), out = new Uint8Array(CAP), landed = new Uint8Array(CAP);
-  const sup = new Uint8Array(CAP), con = new Uint8Array(CAP), pm = new Float32Array(CAP), inn = new Uint8Array(CAP), kicked = new Uint8Array(CAP), cnx = new Float32Array(CAP), cny = new Float32Array(CAP), cnz = new Float32Array(CAP);
+  const scl = new Float32Array(CAP), still = new Float32Array(CAP), pm = new Float32Array(CAP);
+  const alive = new Uint8Array(CAP), awake = new Uint8Array(CAP), out = new Uint8Array(CAP), landed = new Uint8Array(CAP), inn = new Uint8Array(CAP), kicked = new Uint8Array(CAP), nud = new Uint8Array(CAP), guided = new Uint8Array(CAP);
+  const con = new Uint8Array(CAP), sup = new Uint8Array(CAP), cnx = new Float32Array(CAP), cny = new Float32Array(CAP), cnz = new Float32Array(CAP);
+  // what each ball touches from below or the side (normals), to judge whether it can rest there
+  const MC = 8, cN = new Float32Array(CAP * MC * 3), cK = new Uint8Array(CAP), cAw = new Uint16Array(CAP), cW = new Int8Array(CAP), flo = new Uint8Array(CAP);
   const cols = [], quats = [];
-  let n = 0, rMax = SCOOP_R;
+  let n = 0, t = 0, dead = 0;
   const g = Math.max(9.8, 2 * (H * 1.5 + objSize * .3) / (.95 * .95));
-  const addBall = (x, y, z, r, vx0 = 0, vy0 = 0, vz0 = 0, sleeping = false) => {
+  // spatial hash
+  const HB = 1 << 17, head = new Int32Array(HB).fill(-1), nxt = new Int32Array(CAP), cell = R0 * 2;
+  const hk = (i, j, k) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & (HB - 1);
+  const hashIn = i => { const k = hk(Math.floor(px[i] / cell), Math.floor(py[i] / cell), Math.floor(pz[i] / cell)); nxt[i] = head[k]; head[k] = i; };
+  const rebuildHash = () => { head.fill(-1); for (let i = 0; i < n; i++) if (alive[i]) hashIn(i); };
+  const near = (x, y, z, fn) => { const ci = Math.floor(x / cell), cj = Math.floor(y / cell), ck = Math.floor(z / cell);
+    for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
+      for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) if (fn(j)) return true;
+    return false; };
+  const occupied = (x, y, z, f = .85) => { const rr = 2 * R0 * f; return near(x, y, z, j => alive[j] && (px[j] - x) ** 2 + (py[j] - y) ** 2 + (pz[j] - z) ** 2 < rr * rr); };
+  const addBall = (x, y, z, vx0 = 0, vy0 = 0, vz0 = 0, sleeping = false) => {
     if (n >= CAP) return -1; const i = n++;
     px[i] = qx[i] = x; py[i] = qy[i] = y; pz[i] = qz[i] = z; vx[i] = vx0; vy[i] = vy0; vz[i] = vz0;
-    inn[i] = closed && inside(x, z, y) ? 1 : 0; kicked[i] = 0; rad[i] = r; scl[i] = 1; alive[i] = 1; awake[i] = sleeping ? 0 : 1; still[i] = 0; out[i] = 0; landed[i] = sleeping ? 1 : 0;
+    inn[i] = closed && inside(x, z, y) ? 1 : 0; kicked[i] = 0; nud[i] = 0; guided[i] = 0; scl[i] = 1; alive[i] = 1; awake[i] = sleeping ? 0 : 1; still[i] = 0; out[i] = 0; landed[i] = sleeping ? 1 : 0;
     cols[i] = new THREE.Color(FLAVORS[pickFlavor(rng)]);
     quats[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rng() * 6.3, rng() * 6.3, rng() * 6.3));
-    if (r > rMax) rMax = r;
-    if (hashReady) { const k = hk(Math.floor(x / cell), Math.floor(y / cell), Math.floor(z / cell)); nxt[i] = head[k]; head[k] = i; }
-    return i;
+    hashIn(i); return i;
   };
+  const wakeNear = i => near(px[i], py[i], pz[i], j => { if (j !== i && alive[j] && !awake[j] && !out[j] && py[j] > py[i] - R0 * .5 &&
+    (px[j] - px[i]) ** 2 + (py[j] - py[i]) ** 2 + (pz[j] - pz[i]) ** 2 < (2.3 * R0) ** 2) { awake[j] = 1; still[j] = 0; } return false; });
+  const kill = list => { rebuildHash(); for (const i of list) { alive[i] = 0; awake[i] = 0; dead++; } for (const i of list) wakeNear(i); };   // anything resting on them falls again
   const geo = MAX_BALLS <= 400 ? SCOOP_MID : (isMobile || MAX_BALLS > 12000) ? SCOOP_LOW : SCOOP_LUMP;
   const mesh = new THREE.InstancedMesh(geo, scoopMat, CAP); mesh.count = 0; mesh.frustumCulled = false;
   mesh.castShadow = !isMobile; mesh.receiveShadow = true; group.add(mesh);
   const dummy = new THREE.Object3D(), pack = packer(mesh, dummy);
-
-  // spatial hash
-  const HB = 1 << 17, head = new Int32Array(HB), nxt = new Int32Array(CAP);
-  let cell = 1;
-  const hk = (i, j, k) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & (HB - 1);
-  let hashReady = false;
-  const rebuildHash = () => { cell = rMax * 2; head.fill(-1); hashReady = true;
-    for (let i = 0; i < n; i++) if (alive[i]) { const k = hk(Math.floor(px[i] / cell), Math.floor(py[i] / cell), Math.floor(pz[i] / cell)); nxt[i] = head[k]; head[k] = i; } };
-  const occupied = (x, y, z, r, f = .85) => { // any ball overlapping this spot?
-    const ci = Math.floor(x / cell), cj = Math.floor(y / cell), ck = Math.floor(z / cell);
-    for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
-      for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) { const dx = px[j] - x, dy = py[j] - y, dz = pz[j] - z, rr = (rad[j] + r) * f; if (dx * dx + dy * dy + dz * dz < rr * rr) return true; }
-    return false; };
 
   // ---- the floor cut (for over-guesses) ----
   const D = objSize * .7;
@@ -1283,113 +1305,191 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   cut.add(island);
   const setHole = r => { holeR = r; occl.material.uniforms.uR.value = r; pit.scale.set(r, 1, r); pitFloor.scale.set(r, 1, r); };
 
-  // ---- spawning ----
-  const queue = [], retry = []; let qi = 0, retryT = 0, failStreak = 0, interiorFull = false;
-  const skyY = () => b.y1 + H * .5 + objSize * .25 + rng() * objSize * .1;
-  const spot = (r = 0) => { const y = b.y1 - 1e-3, e = r * 2.2;
-    for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng());
-      if (inside(x, z, y) && (!e || (inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y)))) return [x, z]; }
-    return r ? spot(0) : [cx, cz]; };
-  let doorOpen = false, doorT = 0, doorReady = false; const pendingOut = [];
-  const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; hooks.doorOpened && hooks.doorOpened(); }; // walls stay sealed: only new spill comes out
-  const emitOut = r => { // out of the door / burst point, once it has fully swung open
-    if (!doorReady) { openDoor(); pendingOut.push(r); return; }
-    const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1, dx = ov.dir[0] / dl, dz = ov.dir[1] / dl, w = ov.w || .4, h = ov.h || .4;
-    const s = (rng() - .5) * w, v = Math.sqrt(g * H) * (.5 + rng() * .35);
-    if (ov.down) { addBall(at.x + (rng() - .5) * w, at.y - r * 1.2, at.z + (rng() - .5) * w, r, (rng() - .5) * v * .3, -v * .2, (rng() - .5) * v * .3); return; }
-    // start just clear of the outside of the wall, so nothing gets shoved back into the full interior
-    let x = at.x - dz * s, y = at.y + r + rng() * h, z = at.z + dx * s, d = 0;
-    while (sample(x + dx * d, y, z + dz * d) < r * 1.1 && d < objSize * .5) d += vs * .35;
-    addBall(x + dx * d, y, z + dz * d, r, dx * v + (rng() - .5) * v * .3, v * .25, dz * v + (rng() - .5) * v * .3);
-  };
-  // closed objects: a coarse height map of the settled pile, so each ball drops into the lowest open spot
-  const HG = 40, hgx = (b.maxX - b.minX) / HG || 1, hgz = (b.maxZ - b.minZ) / HG || 1, hmap = new Float32Array(HG * HG).fill(b.y0);
+  // ---- where the pile is: a coarse height map of settled balls, plus short holds on columns a falling ball is headed for ----
+  const HG = 40, hgx = (b.maxX - b.minX) / HG || 1, hgz = (b.maxZ - b.minZ) / HG || 1, HN = HG * HG;
+  const hmap = new Float32Array(HN).fill(b.y0), resT = new Float32Array(HN).fill(-1), resTop = new Float32Array(HN);
   const hcell = (x, z) => clamp(Math.floor((x - b.minX) / hgx), 0, HG - 1) + HG * clamp(Math.floor((z - b.minZ) / hgz), 0, HG - 1);
-  const settle = i => { const r = rad[i], top = py[i] + r * .9;
-    for (let x = px[i] - r; x <= px[i] + r + 1e-9; x += Math.max(hgx, r)) for (let z = pz[i] - r; z <= pz[i] + r + 1e-9; z += Math.max(hgz, r)) { const c = hcell(x, z); if (top > hmap[c]) hmap[c] = top; } };
-  const ceilAt = (x, z) => { for (let y = b.y1 - 1e-3; y > b.y0; y -= H / 64) if (inside(x, z, y)) return y; return -1; };
-  const midYs = [.2, .5, .8].map(f => lerp(b.y0, b.y1, f));
-  const spawn = q => {
-    const r = q.r;
-    if (closed) {               // fill from just under the roof; when there's no room left, it pours out the door
-      const full = q.over && pouredA >= answer;          // only spill once the real capacity has been poured in
-      if (full && interiorFull) { if (ov && ov.hole) emitOut(r); return; }
-      let best = null;
-      for (let k = 0; k < 16; k++) {
-        const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (!midYs.some(y => inside(x, z, y))) continue;
-        const c = ceilAt(x, z); if (c < 0) continue; const hgt = hmap[hcell(x, z)]; if (c - hgt < r * 2.1) continue;
-        if (!best || hgt < best[3]) best = [x, c - r * 1.05, z, hgt];
-      }
-      if (best && !occupied(best[0], best[1], best[2], r, 1.02)) { addBall(best[0], best[1], best[2], r, 0, -Math.sqrt(g * r), 0); failStreak = 0; return; }
-      if (!best && full && ++failStreak > 40) interiorFull = true;   // no column has room left: it's really full, send the rest straight out
-      q.tries = (q.tries || 0) + 1;
-      if (q.tries < (full ? 6 : 10)) { retry.push(q); return; }   // no room right now: wait for the pile to settle before deciding it's full
-      if (full && ov && ov.hole) emitOut(r);                      // truly full: the extra spills out (a correction never spills)
-    } else { let x, z, y = skyY(), lo = Infinity;   // aim at the lowest part of the pile so it fills evenly instead of heaping at an edge
-      for (let k = 0; k < 8; k++) { const [cx2, cz2] = spot(r), hh = hmap[hcell(cx2, cz2)] + rng() * r * .5; if (hh < lo) { lo = hh; x = cx2; z = cz2; } }
-      for (let k = 0; k < 6 && occupied(x, y, z, r * 1.2); k++) y += r * 2.5;
-      addBall(x, y, z, r, 0, -rng() * Math.sqrt(g * H) * .3, 0); }
-  };
-  const schedule = (scoops, t0, over) => {   // returns the number of balls
-    const ratio = Math.max(1, Math.ceil(scoops / MAX_BALLS)), nb = Math.ceil(scoops / ratio), r = rFor(ratio, nb);
-    let dur = (reduceMotion ? .5 : 1) * lerp(1.1, 3.6, clamp(Math.log(nb) / Math.log(MAX_BALLS), 0, 1));
-    if (narrowMouth) dur = Math.max(dur, Math.min(nb * .1, 9));   // a narrow mouth takes them one at a time, so nothing jams and spills
-    for (let k = 0; k < nb; k++) queue.push({ t: t0 + (nb === 1 ? 0 : dur * k / (nb - 1)), r, over, scoops: k < nb - 1 ? ratio : scoops - ratio * (nb - 1) });
-    return { nb, dur };
-  };
+  const cellX = c => b.minX + (c % HG + .5) * hgx, cellZ = c => b.minZ + (Math.floor(c / HG) + .5) * hgz;
+  const effH = c => t < resT[c] ? Math.max(hmap[c], resTop[c]) : hmap[c];
+  const foot2 = (x, z, fn) => { const st = Math.min(hgx, hgz, R0) * .99; for (let xx = x - R0; xx <= x + R0 + 1e-9; xx += st) for (let zz = z - R0; zz <= z + R0 + 1e-9; zz += st) fn(hcell(xx, zz)); };
+  const settle = i => { const top = py[i] + R0 * .9; if (!(px[i] > b.minX && px[i] < b.maxX && pz[i] > b.minZ && pz[i] < b.maxZ) && top > spillTop) spillTop = top; foot2(px[i], pz[i], c => { if (top > hmap[c]) hmap[c] = top; }); };
+  const reserve = (x, z, top, until) => foot2(x, z, c => { resTop[c] = Math.max(effH(c), top); resT[c] = until; });
+  const ceilAt = (x, z) => { for (let y = b.y1 - 1e-3; y > b.y0; y -= H / 96) if (inside(x, z, y)) return y; return -1; };
+  const cells = [], ceilC = new Float32Array(HN).fill(-1), drop0 = Math.min(vs * .6, H * .1), roomH = 2.1 * R0 + drop0;   // (wall distances are only as fine as the voxels)
+  for (let c = 0; c < HN; c++) { const x = cellX(c), z = cellZ(c);
+    if (closed) { const cc = ceilAt(x, z); if (cc > b.y0 + roomH) { ceilC[c] = cc; cells.push(c); } }
+    else if (inside(x, z, b.y1 - 1e-3)) cells.push(c); }
+  if (!cells.length) cells.push(hcell(cx, cz));
+  const isFull = () => {
+    if (closed) { let k = 0; for (const c of cells) if (ceilC[c] - hmap[c] >= roomH) k++; return k <= cells.length * .03; }   // (a few corners nothing can reach)
+    return fullFrac() >= .75; };
+  const fullFrac = () => { let k = 0; for (const c of cells) if (hmap[c] >= b.y1 - R0 * 1.5) k++; return k / cells.length; };
+  const insideCount = () => { let k = 0; for (let i = 0; i < n; i++) if (alive[i] && !out[i] && inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3))) k++; return k; };
 
   // how much narrower the mouth is than the widest part (fishbowl ≈ .3, tub ≈ 1)
   let topA = 0, wideA = 0; { const NG = 30, bw = b.maxX - b.minX, bd = b.maxZ - b.minZ;
     for (const [fy, isTop] of [[.999, 1], [.2, 0], [.35, 0], [.5, 0], [.65, 0], [.8, 0]]) { const y = lerp(b.y0, b.y1, fy); let c = 0;
       for (let ix = 0; ix < NG; ix++) for (let iz = 0; iz < NG; iz++) if (inside(b.minX + (ix + .5) * bw / NG, b.minZ + (iz + .5) * bd / NG, y)) c++;
       if (isTop) topA = c; else wideA = Math.max(wideA, c); } }
-  const narrowMouth = !closed && topA < wideA * .6, mouthY = b.y1 - H * .15;
+  const narrowMouth = !closed && topA < wideA * .6, mouthY = b.y1 - H * .15, mouthTop = b.y1 + R0 * 1.5;
+
+  // ---- spawning ----
+  const skyY = () => b.y1 + H * .5 + objSize * .25 + rng() * objSize * .1;
+  const spot = () => { const y = b.y1 - 1e-3, e = R0 * (narrowMouth ? 1.6 : 1.1);
+    for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng());
+      if (inside(x, z, y) && inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y)) return [x, z]; }
+    return [cx, cz]; };
+  const TM = { step: 0, draw: 0 }; P0.TM = TM;
+  let noRoom = false; const SC = { none: 0, wall: 0, bh: 0, occ: 0, ok: 0 };
+  // open objects: a ball meant to go in can't wander out over the rim (an invisible funnel above the mouth); spill balls can
+  const mouthOK = (x, z) => { const y = b.y1 - 1e-3, e = R0 * .9; return inside(x, z, y) && inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y); };
+  const spawnIn = (guide = true) => {   // one ball into the object; false if it can't go in right now (noRoom: nowhere left at all)
+    if (closed) {           // drop it from just under the roof, over the lowest open column
+      let best = -1, bh = Infinity; noRoom = false;
+      for (let k = 0; k < 24; k++) { const c = cells[(rng() * cells.length) | 0], e = effH(c); if (ceilC[c] - e >= roomH && e < bh) { bh = e; best = c; } }
+      if (best < 0) { noRoom = true; SC.none++; return false; }
+      let walls = 0;
+      for (let k = 0; k < 4; k++) { const x = cellX(best) + (rng() - .5) * hgx, z = cellZ(best) + (rng() - .5) * hgz, c = ceilAt(x, z), y = c - R0 - drop0;
+        if (c < 0 || !inside(x, z, y) || sample(x, y, z) < R0 * .5) { walls++; SC.wall++; continue; }
+        if (y - R0 < bh) { SC.bh++; continue; }   // (balls on their way down will fill this one)
+        if (occupied(x, y, z, 1.02)) { SC.occ++; continue; }
+        SC.ok++;
+        addBall(x, y, z, 0, -Math.sqrt(g * R0), 0); reserve(x, z, bh + 1.6 * R0, t + Math.sqrt(2 * Math.max(y - bh, 0) / g) + .4); return true; }
+      if (walls === 4) hmap[best] = Math.max(hmap[best], ceilC[best]);   // a ball can't fit in this column at all
+      return false;
+    }
+    // open: drop from the sky over the lowest part of the pile
+    let x = cx, z = cz, lo = Infinity;
+    for (let k = 0; k < 8; k++) { const [x2, z2] = spot(), e = effH(hcell(x2, z2)) + rng() * R0 * .5; if (e < lo) { lo = e; x = x2; z = z2; } }
+    let y = skyY(); for (let k = 0; k < 6 && occupied(x, y, z, 1.2); k++) y += R0 * 2.5;
+    const i = addBall(x, y, z, 0, -rng() * Math.sqrt(g * H) * .3, 0); if (i >= 0 && guide) guided[i] = 1;
+    reserve(x, z, lo + 1.6 * R0, t + Math.sqrt(2 * Math.max(y - lo, 0) / g) + .3);
+    return true;
+  };
+  let doorOpen = false, doorT = 0;
+  const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; leafOn = leaves.length > 0; hooks.doorOpened && hooks.doorOpened(); };
+  const emitOut = () => {   // one spilled ball out of the door; it can start once the door is part-way open and there's space
+    if (!ov || !ov.hole) return true;
+    openDoor(); if (leaves.length && doorT < .35) return false;
+    const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1, dx = ov.dir[0] / dl, dz = ov.dir[1] / dl, w = ov.w || .4, h = ov.h || .4;
+    const v = Math.sqrt(g * H) * (.5 + rng() * .35);
+    if (ov.down) { const x = at.x + (rng() - .5) * w, y = at.y - R0 * 1.2, z = at.z + (rng() - .5) * w; if (occupied(x, y, z, 1)) return false;
+      addBall(x, y, z, (rng() - .5) * v * .3, -v * .2, (rng() - .5) * v * .3); return true; }
+    for (let k = 0; k < 4; k++) {   // start just clear of the outside of the wall, so nothing gets shoved back into the full interior
+      const s = (rng() - .5) * w; let x = at.x - dz * s, y = at.y + R0 + rng() * h, z = at.z + dx * s, d = 0;
+      while (sample(x + dx * d, y, z + dz * d) < R0 * 1.1 && d < objSize * .5) d += vs * .35;
+      x += dx * d; z += dz * d;
+      if ((leaves.length && leafNear(x, y, z).d < R0 * 1.05) || occupied(x, y, z, 1)) continue;
+      addBall(x, y, z, dx * v + (rng() - .5) * v * .3, v * .25, dz * v + (rng() - .5) * v * .3); return true; }
+    return false;
+  };
+
+  // narrow mouth: a ball that just came through is sent toward the emptiest part of the inside, so the shoulders fill too
+  const belly = []; if (narrowMouth) for (let c = 0; c < HN; c++) { const x = cellX(c), z = cellZ(c); for (let k = 1; k < 24; k++) if (inside(x, z, lerp(b.y0, b.y1, k / 24)) && sample(x, lerp(b.y0, b.y1, k / 24), z) > R0) { belly.push(c); break; } }
+  const steer = i => { if (!belly.length) return;
+    let best = -1, bh = Infinity; for (let k = 0; k < 10; k++) { const c = belly[(rng() * belly.length) | 0], e = effH(c) + rng() * R0 * .3; if (e < bh) { bh = e; best = c; } }
+    const x = cellX(best), z = cellZ(best), dx = x - px[i], dz = z - pz[i], dl = Math.hypot(dx, dz) || 1, drop = Math.max(py[i] - bh - R0, R0);
+    const tf = (vy[i] + Math.sqrt(vy[i] * vy[i] + 2 * g * drop)) / g, v = Math.min(dl / Math.max(tf, .05), Math.sqrt(g * H) * .9);   // reach it as it lands
+    vx[i] = dx / dl * v; vz[i] = dz / dl * v; reserve(x, z, bh + 1.6 * R0, t + tf + .3); };
   // ---- physics step ----
   let plopBudget = 0;
+  // can a resting ball stay where it is? Only if what touches it surrounds it from below (a cradle, a floor),
+  // not if it sits on a rim, a ridge or the top of a single ball. → -1 stays, -2 nothing solid under it yet, else the angle it tips toward (NaN: any way)
+  const ang = new Float32Array(MC + 1), _t1 = new V3(), _t2 = new V3(), _n = new V3();
+  const flatPlane = (i, x, y, z) => {   // is the surface under this contact wide (a floor or a bowl), not a thin edge?
+    _n.set(x, y, z); _t1.set(Math.abs(x) < .9 ? 1 : 0, 0, Math.abs(x) < .9 ? 0 : 1).cross(_n).normalize(); _t2.copy(_n).cross(_t1);
+    const bx = px[i] - x * R0 * .9, by = py[i] - y * R0 * .9, bz = pz[i] - z * R0 * .9, o = R0 * .8, l = R0 * .3;
+    // a ridge falls away on both sides along some direction (a rim, an edge); a floor, a bowl or an inside corner doesn't
+    return !((sample(bx + _t1.x * o, by + _t1.y * o, bz + _t1.z * o) > l && sample(bx - _t1.x * o, by - _t1.y * o, bz - _t1.z * o) > l) ||
+             (sample(bx + _t2.x * o, by + _t2.y * o, bz + _t2.z * o) > l && sample(bx - _t2.x * o, by - _t2.y * o, bz - _t2.z * o) > l)); };
+  const restDir = i => {
+    if (flo[i]) return -1;
+    const K = cK[i], base = i * MC * 3; let m = 0, up = false, any = false, ridge = false;
+    for (let k = 0; k < K; k++) {
+      if ((cAw[i] >> k & 1) && still[i] <= .3) continue;   // leaning on balls that are still moving: wait for them first
+      const x = cN[base + k * 3], y = cN[base + k * 3 + 1], z = cN[base + k * 3 + 2], hl = Math.hypot(x, z);
+      if (k === cW[i] && y > .3 && !flatPlane(i, x, y, z)) { ridge = true; continue; }   // a rim or a ridge holds nothing
+      any = true; if (y > .3) up = true;
+      if (k === cW[i] && hl < .28) return -1;   // a (near) flat floor
+      if (hl > .15) ang[m++] = Math.atan2(z, x);
+    }
+    if (!any) return ridge ? NaN : -2;
+    if (!up) return -2;
+    if (m === 0) return NaN;   // balanced on top of something round
+    const a = ang; for (let k = 1; k < m; k++) { const v = a[k]; let j = k - 1; while (j >= 0 && a[j] > v) { a[j + 1] = a[j]; j--; } a[j + 1] = v; }
+    let gap = a[0] + 6.2832 - a[m - 1], at = a[m - 1] + gap / 2;
+    for (let k = 1; k < m; k++) { const d = a[k] - a[k - 1]; if (d > gap) { gap = d; at = a[k - 1] + d / 2; } }
+    return gap < Math.PI + .2 ? -1 : at + Math.PI;   // supported all round (sticky ice cream allows a little slack), or tip off toward the open side
+  };
+  const addC = (i, x, y, z, aw, wall) => { const k = cK[i]; if (k >= MC) return; const o = (i * MC + k) * 3; cN[o] = x; cN[o + 1] = y; cN[o + 2] = z;
+    if (aw) cAw[i] |= 1 << k; if (wall) cW[i] = k; cK[i] = k + 1; };
+  // balls flying through open air with nothing near them just move this frame; only the rest need small sub-steps
+  const free = new Uint8Array(CAP); let topAwake = -Infinity, spillTop = 0;
+  const groundTop = (x, z) => x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ ? hmap[hcell(x, z)] : hasGround(x, z) ? spillTop : -D;
   const step = dt => {
-    let maxV = 0; for (let i = 0; i < n; i++) if (awake[i]) maxV = Math.max(maxV, Math.abs(vx[i]) + Math.abs(vy[i]) + Math.abs(vz[i]));
-    let rMin = rMax; for (let i = 0; i < n; i++) if (awake[i] && rad[i] < rMin) rMin = rad[i];
-    const lim = .5 * Math.min(rMin, vs), ns = clamp(Math.ceil((maxV + g * dt) * dt / lim), 1, 8), h = dt / ns;
-    const damp = Math.exp(-7 * h), sdamp = Math.exp(-3 * h), maxStep = lim * 1.6;
+    let maxV = 0, top = -Infinity;
+    for (let i = 0; i < n; i++) { if (!awake[i]) continue;
+      const sp = Math.abs(vx[i]) + Math.abs(vy[i]) + Math.abs(vz[i]), tr = (sp + g * dt) * dt + 2.2 * R0, lo = py[i] - tr;
+      if (!con[i] && lo > topAwake && lo > groundTop(px[i], pz[i]) && !(narrowMouth && !kicked[i] && lo < mouthY) && !(guided[i] && lo < mouthTop) && sample(px[i], py[i], pz[i]) > tr) {
+        free[i] = 1; vy[i] -= g * dt; px[i] += vx[i] * dt; py[i] += vy[i] * dt; pz[i] += vz[i] * dt; still[i] = 0;
+        if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; dead++; }
+        continue; }
+      free[i] = 0; maxV = Math.max(maxV, sp); if (py[i] > top) top = py[i]; }
+    topAwake = top + R0;
+    const lim = .5 * Math.min(R0, vs), ns = clamp(Math.ceil((maxV + g * dt) * dt / lim), 1, 8), h = dt / ns;
+    const damp = Math.exp(-7 * h), sdamp = Math.exp(-3 * h), maxStep = lim * 1.6, rr = 2 * R0, rr2 = rr * rr;
+    const thr = .25 * Math.sqrt(g * R0), nudV = .45 * Math.sqrt(g * R0);
+    const lb = leafOn ? leafBB : null;
     for (let s = 0; s < ns; s++) {
       rebuildHash();
-      for (let i = 0; i < n; i++) { if (!awake[i]) continue;
+      for (let i = 0; i < n; i++) { if (!awake[i] || free[i]) continue;
         qx[i] = px[i]; qy[i] = py[i]; qz[i] = pz[i]; vy[i] -= g * h; pm[i] = Math.hypot(vx[i], vy[i], vz[i]);
         let dx = vx[i] * h, dy = vy[i] * h, dz = vz[i] * h; const m = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
         if (m > maxStep) { const f = maxStep / m; dx *= f; dy *= f; dz *= f; }
-        px[i] += dx; py[i] += dy; pz[i] += dz; sup[i] = 0; con[i] = 0; cnx[i] = cny[i] = cnz[i] = 0;
-        if (narrowMouth && py[i] > mouthY && py[i] < b.y1 + rad[i] * 2 && still[i] > .08) {   // perched on the rim: ease it in toward the middle
-          const ex = cx - px[i], ez = cz - pz[i], el = Math.hypot(ex, ez) || 1, push = Math.sqrt(g * rad[i]) * .6 * h; vx[i] += ex / el * push / h * h; vz[i] += ez / el * push / h * h; px[i] += ex / el * push * h; pz[i] += ez / el * push * h; }
-        if (narrowMouth && !kicked[i] && py[i] < mouthY) { kicked[i] = 1; const a = rng() * 6.283, v = Math.sqrt(g * H) * (.15 + rng() * .3); vx[i] += Math.cos(a) * v; vz[i] += Math.sin(a) * v; } }
-      // ball-ball contacts (sleeping balls act as fixed)
-      for (let i = 0; i < n; i++) { if (!awake[i]) continue;
+        px[i] += dx; py[i] += dy; pz[i] += dz; sup[i] = con[i] = flo[i] = cK[i] = cAw[i] = 0; cW[i] = -1; cnx[i] = cny[i] = cnz[i] = 0;
+        if (narrowMouth && !kicked[i] && py[i] < mouthY) { kicked[i] = 1; steer(i); } }
+      // ball-ball contacts (settled balls act as fixed)
+      for (let i = 0; i < n; i++) { if (!awake[i] || free[i]) continue;
         const ci = Math.floor(px[i] / cell), cj = Math.floor(py[i] / cell), ck = Math.floor(pz[i] / cell);
         for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
           for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) {
-            if (j === i || (awake[j] && j < i)) continue;
-            const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j], rr = rad[i] + rad[j], d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 >= rr * rr) continue;
+            if (j === i || (awake[j] && j < i && !free[j])) continue;
+            const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j], d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 >= rr2) continue;
+            if (awake[j] && guided[i] && guided[j] && py[i] > mouthTop && py[j] > mouthTop) continue;   // still dropping toward the mouth: they slip past each other instead of jamming it
             if (d2 < 1e-12) { px[i] += (rng() - .5) * rr * .2; pz[i] += (rng() - .5) * rr * .2; continue; }   // exactly stacked: nudge apart
             const d = Math.sqrt(d2), pen = rr - d, nx0 = dx / d, ny0 = dy / d, nz0 = dz / d;
-            if (awake[j]) { const wi = rad[j] ** 3 / (rad[i] ** 3 + rad[j] ** 3), wj = 1 - wi;
-              px[i] += nx0 * pen * wi; py[i] += ny0 * pen * wi; pz[i] += nz0 * pen * wi; px[j] -= nx0 * pen * wj; py[j] -= ny0 * pen * wj; pz[j] -= nz0 * pen * wj;
-              con[j]++; if (ny0 < -.35) sup[j]++; cnx[j] -= nx0; cny[j] -= ny0; cnz[j] -= nz0; }
-            else { px[i] += nx0 * pen; py[i] += ny0 * pen; pz[i] += nz0 * pen; }
-            con[i]++; if (ny0 > .35) sup[i]++; cnx[i] += nx0; cny[i] += ny0; cnz[i] += nz0;
+            if (awake[j]) { const hp = pen * .5;
+              px[i] += nx0 * hp; py[i] += ny0 * hp; pz[i] += nz0 * hp; px[j] -= nx0 * hp; py[j] -= ny0 * hp; pz[j] -= nz0 * hp;
+              con[j]++; if (ny0 < -.35) sup[j]++;
+              if (ny0 > -.2 && still[j] > 0) addC(i, nx0, ny0, nz0, 1, 0);
+              if (ny0 < .2 && still[i] > 0) addC(j, -nx0, -ny0, -nz0, 1, 0); }
+            else { px[i] += nx0 * pen; py[i] += ny0 * pen; pz[i] += nz0 * pen; if (ny0 > -.2) addC(i, nx0, ny0, nz0, 0, 0); cnx[i] += nx0; cny[i] += ny0; cnz[i] += nz0; }   // (bounces are only soaked up by things that can't move)
+            con[i]++; if (ny0 > .35) sup[i]++;
           } }
-      // walls and floor
-      for (let i = 0; i < n; i++) { if (!awake[i]) continue; const r = rad[i];
+      // walls, door leaves and floor
+      for (let i = 0; i < n; i++) { if (!awake[i] || free[i]) continue;
         const d = sample(px[i], py[i], pz[i]);
-        if (d < r) { const e = vs * .5;
+        if (d < R0) { const e = vs * .5;
           let gx = sample(px[i] + e, py[i], pz[i]) - sample(px[i] - e, py[i], pz[i]), gy = sample(px[i], py[i] + e, pz[i]) - sample(px[i], py[i] - e, pz[i]), gz = sample(px[i], py[i], pz[i] + e) - sample(px[i], py[i], pz[i] - e);
-          const gl = Math.hypot(gx, gy, gz); if (gl > 1e-9 && gl < 1e8) { gx /= gl; gy /= gl; gz /= gl; const p = r - d; px[i] += gx * p; py[i] += gy * p; pz[i] += gz * p; con[i]++; cnx[i] += gx; cny[i] += gy; cnz[i] += gz; if (gy > .35) sup[i] += 2; } }
-        if (py[i] < r && qy[i] >= r * .4 && hasGround(px[i], pz[i])) { py[i] = r; con[i]++; sup[i] += 2; cny[i] += 1; }
-        if (closed && inside(px[i], pz[i], py[i]) !== !!inn[i]) { px[i] = qx[i]; py[i] = qy[i]; pz[i] = qz[i]; con[i]++; sup[i] += 2; }   // walls can't be crossed
+          const gl = Math.hypot(gx, gy, gz); if (gl > 1e-9 && gl < 1e8) { gx /= gl; gy /= gl; gz /= gl; const p = R0 - d; px[i] += gx * p; py[i] += gy * p; pz[i] += gz * p; con[i]++; cnx[i] += gx; cny[i] += gy; cnz[i] += gz;
+            if (gy > .35) sup[i] += 2; if (gy > -.2) addC(i, gx, gy, gz, 0, 1); } }
+        if (lb && !inn[i] && lb.containsPoint(_lp.set(px[i], py[i], pz[i]))) { const L = leafNear(px[i], py[i], pz[i]);
+          if (L.in || L.d < R0) { let ux = px[i] - L.x, uy = py[i] - L.y, uz = pz[i] - L.z, ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+            if (L.in) { ux = -ux; uy = -uy; uz = -uz; }   // the centre got inside the leaf: back out through the nearest face
+            px[i] = L.x + ux * R0; py[i] = L.y + uy * R0; pz[i] = L.z + uz * R0; con[i]++; cnx[i] += ux; cny[i] += uy; cnz[i] += uz; if (uy > .35) sup[i]++; } }
+        if (py[i] < R0 && qy[i] >= R0 * .4 && hasGround(px[i], pz[i])) { py[i] = R0; con[i]++; sup[i] += 2; cny[i] += 1; flo[i] = 1; }
+        if (guided[i] && py[i] > b.y1 - R0 && py[i] < b.y1 + 1.5 * R0 && !mouthOK(px[i], pz[i]) && mouthOK(qx[i], qz[i])) { px[i] = qx[i]; pz[i] = qz[i]; con[i]++; }   // the funnel
+        if (closed && inside(px[i], pz[i], py[i]) !== !!inn[i]) {   // walls can't be crossed: keep whichever part of the move stays on its side (so it slides, never hangs)
+          if (inside(qx[i], qz[i], py[i]) === !!inn[i]) { px[i] = qx[i]; pz[i] = qz[i]; }
+          else if (inside(px[i], pz[i], qy[i]) === !!inn[i]) py[i] = qy[i];
+          else { px[i] = qx[i]; py[i] = qy[i]; pz[i] = qz[i]; }
+          con[i]++; }
       }
       // velocities, friction, sleeping
-      for (let i = 0; i < n; i++) { if (!awake[i]) continue;
+      for (let i = 0; i < n; i++) { if (!awake[i] || free[i]) continue;
         vx[i] = (px[i] - qx[i]) / h; vy[i] = (py[i] - qy[i]) / h; vz[i] = (pz[i] - qz[i]) / h;
-        { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = Math.max(pm[i], .08 * Math.sqrt(g * rad[i]));  // pushes never add energy (no creeping speed-up in a crowd)
+        { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = Math.max(pm[i], .08 * Math.sqrt(g * R0));  // pushes never add energy (no creeping speed-up in a crowd)
           if (sp > cap) { const f = cap / sp; vx[i] *= f; vy[i] *= f; vz[i] *= f; } }
         if (con[i]) { const nl = Math.hypot(cnx[i], cny[i], cnz[i]);   // soft ice cream: hits soak up the rebound, rolling and sliding carry on
           if (nl > 1e-6) { const ux = cnx[i] / nl, uy = cny[i] / nl, uz = cnz[i] / nl, vn = vx[i] * ux + vy[i] * uy + vz[i] * uz;
@@ -1397,87 +1497,143 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
           vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= .3; }
         if (sup[i]) { vx[i] *= sdamp; vy[i] *= sdamp; vz[i] *= sdamp;
           if (!landed[i]) { landed[i] = 1; if (plopBudget > 0) { plopBudget--; plop(.75 + rng() * .5, .1); } } }
-        const sp2 = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i], thr = .25 * Math.sqrt(g * rad[i]);
-        if (con[i] && sp2 < thr * thr) { still[i] += h;   // resting: supported from below, or wedged in place for a while
-          if (!out[i] && (sup[i] >= 2 ? still[i] > .18 : still[i] > .35)) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0;
-            if (sunkIn(i)) { alive[i] = 0; continue; }   // a squeezed-in extra that ended up half inside another ball: drop it rather than freeze it merged
-            settle(i); } } else still[i] = 0;
-        if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; }
+        if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; dead++; continue; }
+        if (!con[i] || vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] >= thr * thr) { still[i] = 0; continue; }
+        still[i] += h; if (out[i] || still[i] < .15) continue;
+        const tip = restDir(i);
+        if (tip === -1) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0;
+          if (sunkIn(i)) { alive[i] = 0; dead++; continue; }   // a squeezed-in extra that ended up half inside another ball: drop it rather than freeze it merged
+          settle(i); continue; }
+        if (tip === -2 || con[i] >= 4) {   // waiting on balls under it, or packed in a crowd: it can't tip anywhere, so let it settle
+          if (con[i] >= 4 && still[i] > .5) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; if (sunkIn(i)) { alive[i] = 0; dead++; continue; } settle(i); }
+          continue; }
+        // perched on a rim, a ridge or the top of a ball: tip it off (over the rim of an open object, roll it in)
+        let ex, ez;
+        if (!closed && py[i] > b.y1 - 2 * R0 && px[i] > b.minX && px[i] < b.maxX && pz[i] > b.minZ && pz[i] < b.maxZ && (Number.isNaN(tip) || guided[i])) { ex = cx - px[i]; ez = cz - pz[i]; }
+        else if (Number.isNaN(tip)) { const a = rng() * 6.283; ex = Math.cos(a); ez = Math.sin(a); }
+        else { ex = Math.cos(tip); ez = Math.sin(tip); }
+        const el = Math.hypot(ex, ez) || 1, nv = nudV * (1 + Math.min(nud[i], 8) * .12); vx[i] += ex / el * nv; vz[i] += ez / el * nv; still[i] = 0; if (nud[i] < 255) nud[i]++;
       }
     }
   };
-  const sunkIn = i => { const ci = Math.floor(px[i] / cell), cj = Math.floor(py[i] / cell), ck = Math.floor(pz[i] / cell);
-    for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
-      for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) { if (j === i || !alive[j] || awake[j]) continue;
-        const dx = px[j] - px[i], dy = py[j] - py[i], dz = pz[j] - pz[i], rr = (rad[i] + rad[j]) * .62; if (dx * dx + dy * dy + dz * dz < rr * rr) return true; }
-    return false; };
+  const sunkIn = i => near(px[i], py[i], pz[i], j => j !== i && alive[j] && !awake[j] && (px[j] - px[i]) ** 2 + (py[j] - py[i]) ** 2 + (pz[j] - pz[i]) ** 2 < (2 * R0 * .62) ** 2);
   const anyAwake = () => { for (let i = 0; i < n; i++) if (awake[i]) return true; return false; };
+  // instances: a full re-pack only when balls come or go; otherwise just the moving ones are rewritten
+  const packIdx = new Int32Array(CAP), tq = new THREE.Quaternion(), ax = new V3(); let lastN = -1, lastDead = -1;
   const draw = dt => {
-    const tq = new THREE.Quaternion(), ax = new V3();
+    const full = n !== lastN || dead !== lastDead;
     for (let i = 0; i < n; i++) { if (!alive[i]) continue;
-      if (awake[i]) { const vh = Math.hypot(vx[i], vz[i]); if (vh > 1e-4) { ax.set(vz[i] / vh, 0, -vx[i] / vh); tq.setFromAxisAngle(ax, vh * dt / rad[i]); quats[i].premultiply(tq); } }
-      pack.put(px[i], py[i], pz[i], rad[i] * scl[i], quats[i], cols[i]); }
-    pack.end();
+      if (awake[i]) { const vh = Math.hypot(vx[i], vz[i]); if (vh > 1e-4) { ax.set(vz[i] / vh, 0, -vx[i] / vh); tq.setFromAxisAngle(ax, vh * dt / R0); quats[i].premultiply(tq); } }
+      if (full) { packIdx[i] = pack.n; pack.put(px[i], py[i], pz[i], R0 * scl[i], quats[i], cols[i]); }
+      else if (awake[i] || scl[i] < 1) { dummy.position.set(px[i], py[i], pz[i]); dummy.quaternion.copy(quats[i]); dummy.scale.setScalar(R0 * scl[i]); dummy.updateMatrix(); mesh.setMatrixAt(packIdx[i], dummy.matrix); } }
+    if (full) { pack.end(); lastN = n; lastDead = dead; } else mesh.instanceMatrix.needsUpdate = true;
   };
 
   // ---- timeline ----
-  const P = Object.assign(P0, { group, phase: 'your', count: 0, done: false, extent: footR, hole: 0 });
-  let outT = 0, doneT = 0, pouredA = 0, t = 0, phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0;
-  const startA = () => { const s = schedule(guess, .15, true); lastSpawnT = .15 + s.dur; };
-  startA();
-  const settled = () => qi >= queue.length && !retry.length && (!anyAwake() || t - lastSpawnT > 2.6) && t - lastSpawnT > .5;
+  //  A: your scoops pour in (and spill out the door / over the top if it's too many)
+  //  B: too few → more pour in until it's full      cut: too many → the floor opens and the spill falls away
+  const P = Object.assign(P0, { group, phase: 'your', count: 0, done: false, extent: footR, hole: 0, R0, Nfill });
+  const queue = [], wait = []; let qi = 0;
+  let phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0, doneT = 0, countAcc = 0;
+  const SPILL_CAP = Math.round(closed ? Math.min(MAX_BALLS * .2, 1600) : MAX_BALLS * .35);   // enough to look like a flood; a door only lets so many through
+  const tFor = nb => (reduceMotion ? .5 : 1) * lerp(1.0, 3.4, clamp(Math.log(Math.max(nb, 1)) / Math.log(MAX_BALLS), 0, 1));
+  const plan = (nb, scoops, t0, dur, kind) => { for (let k = 0; k < nb; k++) queue.push({ t: t0 + (nb === 1 ? 0 : dur * k / (nb - 1)), kind, scoops: scoops / nb, t1: 0 }); return t0 + dur; };
+  { const inS = Math.min(guess, answer), nbIn = Math.max(1, Math.round(inS / ratio));
+    const exS = Math.max(0, guess - answer), nbSp = exS > 0 ? clamp(Math.round(exS / ratio), 1, SPILL_CAP) : 0;
+    if (closed) { let end = plan(nbIn, inS, .1, tFor(nbIn), 'in');
+      if (nbSp) end = plan(nbSp, exS, end + .2, (reduceMotion ? .5 : 1) * clamp(.5 + .5 * Math.log10(nbSp), .5, 2.2), 'spill');
+      lastSpawnT = end; }
+    else { const nb = nbIn + nbSp; let d = tFor(nb); if (narrowMouth) d = Math.max(d, Math.min(nb * .055, 4));
+      const end = plan(nbIn, inS, .1, d * nbIn / nb, 'in'); lastSpawnT = nbSp ? plan(nbSp, exS, end + d / nb, d * nbSp / nb, 'spill') : end; } }
+  const drained = () => qi >= queue.length && !wait.length;
+  const quiet = () => drained() && t - lastSpawnT > .5 && (!anyAwake() || t - lastSpawnT > 2.2);
+  const markOut = heap => { let k = 0;   // spilled over (and when it was too many: heaped up above the brim)
+    for (let i = 0; i < n; i++) if (alive[i] && (!inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)) || (heap && !closed && py[i] > b.y1 + R0 * .4))) { out[i] = 1; k++; } return k; };
+  const bMax = () => guess > answer ? 2.6 : PHASE_MAX;
+  const startB = () => { phase = 'B'; pt = 0;
+    const need = Math.max(0, Math.round(Nfill - insideCount()));
+    let d = tFor(need); if (narrowMouth) d = Math.max(d, Math.min(need * .04, 2.8));
+    lastSpawnT = need ? plan(need, 0, t + .3, d, 'in') : t; };
+  const afterB = () => { const k = markOut(guess > answer); pt = 0;
+    if (k && guess > answer) { phase = 'cut'; cutT = 0; } else if (k) phase = 'tidy'; else phase = 'reveal'; };
+  const trySpawn = q => q.kind === 'spill' ? (closed ? emitOut() : spawnIn(false)) : spawnIn();
   P.update = dt => {
     dt = Math.min(dt, 1 / 30); t += dt; pt += dt; plopBudget = Math.min(plopBudget + dt * 22, 3);
-    if (n === 0 || qi < queue.length) rebuildHash();
-    while (qi < queue.length && queue[qi].t <= t) { const q = queue[qi++]; spawn(q); if (phase === 'A') { P.count += q.scoops; pouredA += q.scoops; } }
-    retryT -= dt; if (retry.length && retryT <= 0) { retryT = .12; for (const q of retry.splice(0, 40)) spawn(q); }
-    if (doorOpen && doorT < 1) { doorT = Math.min(1, doorT + dt / .45); ov.open && ov.open(easeInOutSine(doorT));
-      if (doorT >= 1) { leafSolid = true; buildSDF(); doorReady = true; } }   // the open door becomes a solid the spill bounces off
-    if (doorReady && pendingOut.length) { outT -= dt; if (outT <= 0) { outT = .06; for (const r of pendingOut.splice(0, 24)) emitOut(r); } }
-    if (anyAwake()) step(dt);
-    if (phase === 'A' && settled()) { pt = 0;
-      if (guess !== answer) hooks.correctionStart && hooks.correctionStart();
-      if (guess < answer) { phase = 'B'; const s = schedule(answer - guess, t + .4, false); lastSpawnT = t + .4 + s.dur; }
-      else if (guess > answer) { phase = 'cut'; cutT = 0; }
-      else phase = 'reveal'; }
-    else if (phase === 'B' && settled()) { phase = 'tidy'; pt = 0;   // strays that rolled off onto the floor shrink away
-      for (let i = 0; i < n; i++) if (alive[i] && !inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3))) out[i] = 1; }
-    else if (phase === 'tidy') { const k = clamp(pt / .45, 0, 1);
-      for (let i = 0; i < n; i++) if (out[i] && alive[i]) { scl[i] = 1 - easeInOutSine(k); if (k >= 1) { alive[i] = 0; awake[i] = 0; } }
-      if (k >= 1) { phase = 'reveal'; pt = 0; } }
+    if (leafOn) { if (doorT < 1) { doorT = Math.min(1, doorT + dt / .45); ov.open(easeInOutSine(doorT)); } syncLeaves(); }
+    else if (doorOpen && doorT < 1) { doorT = Math.min(1, doorT + dt / .45); ov.open && ov.open(easeInOutSine(doorT)); }
+    // pour: new balls on schedule; ones that found no room yet try again each frame
+    const fresh = []; while (qi < queue.length && queue[qi].t <= t) fresh.push(queue[qi++]);
+    if (wait.length) { let tries = 0, outs = 0; const keep = [];   // ones that found no room yet try again
+      for (const q of wait) {
+        if (q.kind === 'spill' ? outs++ > 40 : tries++ > 300) { keep.push(q); continue; }
+        if (trySpawn(q)) continue;
+        if (q.kind === 'in' && noRoom && t - q.t1 > .8) { if (phase === 'A' && guess > answer) { q.kind = 'spill'; if (closed) keep.push(q); } continue; }   // really full: too many → it spills, otherwise it wasn't needed
+        keep.push(q); }
+      wait.length = 0; wait.push(...keep); }
+    for (const q of fresh) { if (phase === 'A') countAcc += q.scoops; q.t1 = t; if (!trySpawn(q)) wait.push(q); }
+    if (phase === 'A') P.count = Math.min(guess, Math.round(countAcc));
+    const _t0 = performance.now(); if (anyAwake()) step(dt); TM.step += performance.now() - _t0;
+    if (phase === 'A') {
+      if (quiet() || pt > PHASE_MAX - .3) { P.count = guess; queue.length = qi; wait.length = 0;
+        if (guess !== answer) hooks.correctionStart && hooks.correctionStart();
+        if (!isFull()) startB(); else afterB(); } }
+    else if (phase === 'B') {
+      if (drained() && t - lastSpawnT > .9 && pt < bMax() - 2.4 && !isFull()) {   // still not full: top it up
+        const k = Math.max(2, Math.round(Nfill * .03)); lastSpawnT = plan(k, 0, t + .05, .3, 'in'); }
+      if ((drained() && t - lastSpawnT > .5 && (isFull() || pt > bMax() - 2.4) && (!anyAwake() || t - lastSpawnT > 1.6)) || pt > bMax() - .3) {
+        queue.length = qi; wait.length = 0; afterB(); } }
+    else if (phase === 'tidy') { const k = clamp(pt / .45, 0, 1);   // strays that rolled off onto the floor shrink away
+      for (let i = 0; i < n; i++) if (out[i] && alive[i]) scl[i] = 1 - easeInOutSine(k);
+      if (k >= 1) { const gone = []; for (let i = 0; i < n; i++) if (out[i] && alive[i]) gone.push(i); kill(gone); phase = 'reveal'; pt = 0; } }
     else if (phase === 'cut') {
       cutT += dt;
       if (!holeOn) {
         let far = footR * 1.08;
-        for (let i = 0; i < n; i++) if (alive[i] && !inside(px[i], pz[i], py[i])) { out[i] = 1; awake[i] = 1; still[i] = 0;
-          const dx = px[i] - cx, dz = pz[i] - cz, dl = Math.hypot(dx, dz) || 1, v = Math.sqrt(g * rad[i]) * 1.2;
-          vx[i] += dx / dl * v; vz[i] += dz / dl * v; far = Math.max(far, dl + rad[i] * 2.5); }
+        for (let i = 0; i < n; i++) if (alive[i] && out[i]) { awake[i] = 1; still[i] = 0;
+          const dx = px[i] - cx, dz = pz[i] - cz, dl = Math.hypot(dx, dz) || 1, v = Math.sqrt(g * R0) * 1.2;
+          vx[i] += dx / dl * v; vz[i] += dz / dl * v; far = Math.max(far, dl + R0 * 2.5); }
         holeMax = far; holeOn = true; cut.visible = true; hooks.cutStart && hooks.cutStart(); plop(.45, .25);
       }
       const T1 = reduceMotion ? .3 : .7, T2 = reduceMotion ? 1.2 : 2.0, T3 = reduceMotion ? .3 : .7;
       if (cutT < T1) setHole(lerp(0, holeMax, easeInOutCubic(cutT / T1)));
       else if (cutT < T1 + T2) setHole(holeMax);
       else if (cutT < T1 + T2 + T3) { const k = (cutT - T1 - T2) / T3; P.zoomBack = true; setHole(lerp(holeMax, 0, easeInOutCubic(k)));
-        for (let i = 0; i < n; i++) if (alive[i] && out[i] && py[i] > -rad[i]) scl[i] = 1 - k; }
-      else { for (let i = 0; i < n; i++) if (out[i]) { alive[i] = 0; awake[i] = 0; } holeOn = false; cut.visible = false; hooks.cutEnd && hooks.cutEnd(); phase = 'reveal'; pt = 0; }
+        for (let i = 0; i < n; i++) if (alive[i] && out[i] && py[i] > -R0) scl[i] = 1 - k; }
+      else { const gone = []; for (let i = 0; i < n; i++) if (out[i] && alive[i]) gone.push(i); kill(gone);
+        holeOn = false; cut.visible = false; hooks.cutEnd && hooks.cutEnd(); phase = 'reveal'; pt = 0; }
       P.hole = holeOn ? holeR : 0;
     }
-    if (phase === 'reveal' && !P.done) { P.done = true; P.phase = 'real'; }
-    if (P.done && anyAwake()) { doneT += dt; if (doneT > 1.5)   // tidy up: slow stragglers come to rest shortly after the round
-      for (let i = 0; i < n; i++) if (awake[i] && !out[i] && vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] < 9 * .0625 * g * rad[i]) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; settle(i); } }
+    if (phase === 'reveal' && !P.done) P.done = true;
+    if (P.done && anyAwake()) { doneT += dt;   // after the round: let stragglers come to rest, then stop simulating
+      if (doneT > 2.5) for (let i = 0; i < n; i++) if (awake[i] && !out[i] && con[i] && vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] < .4 * g * R0) { const tp = restDir(i);
+        if (tp === -1 || doneT > 6) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; if (sunkIn(i)) { alive[i] = 0; dead++; } else settle(i); } } }   // never freeze one balanced on an edge
     extentT -= dt; if (extentT <= 0) { extentT = .25; let e = footR;
-      for (let i = 0; i < n; i++) if (alive[i] && py[i] > -rad[i]) e = Math.max(e, Math.hypot(px[i] - cx, pz[i] - cz) + rad[i]); P.extent = e; }
-    draw(dt);
+      for (let i = 0; i < n; i++) if (alive[i] && py[i] > -R0) e = Math.max(e, Math.hypot(px[i] - cx, pz[i] - cz) + R0); P.extent = e; }
+    P.phase = phase === 'A' ? 'your' : 'real'; P.stage = phase;
+    const _t1 = performance.now(); draw(dt); TM.draw += performance.now() - _t1;
   };
+  P.awakeInfo = () => { const o = []; for (let i = 0; i < n; i++) if (alive[i] && awake[i]) o.push({ i, p: [px[i], py[i], pz[i]].map(v => +v.toFixed(3)), v: +Math.hypot(vx[i], vy[i], vz[i]).toFixed(3), con: con[i], cK: cK[i], cW: cW[i], cAw: cAw[i], cn: Array.from(cN.subarray(i * MC * 3, i * MC * 3 + cK[i] * 3)).map(v => +v.toFixed(2)), tip: restDir(i), still: +still[i].toFixed(2), nud: nud[i], sdf: +sample(px[i], py[i], pz[i]).toFixed(4), R0 }); return o; };
+  P.spawnInfo = () => ({ cells: cells.length, R0, b, ceil: cells.slice(0, 5).map(c => [cellX(c), cellZ(c), ceilC[c], hmap[c]]), mid: [cx, cz, ceilAt(cx, cz), inside(cx, cz, b.y0 + H / 2), sample(cx, b.y0 + H / 2, cz)] });
+  P.stats = () => { let aw = 0, ins = 0, outF = 0, perched = 0, floating = 0, ovl = 0;
+    rebuildHash();
+    for (let i = 0; i < n; i++) { if (!alive[i]) continue;
+      const isIn = inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)); if (isIn) ins++; else outF++; if (awake[i]) aw++;
+      if (!awake[i]) { // what holds a settled ball up?
+        let k = 0, sx = 0, sy = 0, sz = 0; if (py[i] <= R0 * 1.02) { k += 2; sy += 2; }
+        near(px[i], py[i], pz[i], j => { if (j === i || !alive[j]) return false; const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j], d = Math.hypot(dx, dy, dz);
+          if (d < R0 * 2.06 && dy / d > .3) { k++; sx += dx / d; sy += dy / d; sz += dz / d; } if (d < R0 * 1.24) ovl++; return false; });
+        const d = sample(px[i], py[i], pz[i]); if (d < R0 * 1.06) { const e = vs * .5, gy = sample(px[i], py[i] + e, pz[i]) - sample(px[i], py[i] - e, pz[i]); if (gy > .3 * e) { k++; sy += 1; } }
+        if (!k) floating++; else if (k === 1 && py[i] > b.y1 - R0 * 2) perched++; } }
+    return { n, alive: ins + outF, awake: aw, inside: ins, outside: outF, perched, floating, overlaps: ovl, stage: phase, t: +t.toFixed(2), SC, q: queue.length - qi, w: wait.length, full: isFull(), ff: closed ? 0 : +fullFrac().toFixed(2), R0: +R0.toFixed(4), Nfill: Math.round(Nfill) }; };
   /* Skip straight to the end state: the object filled with the real amount */
   P.finishInstant = () => {
-    const ratio = Math.max(1, Math.ceil(answer / MAX_BALLS)), nb = Math.ceil(answer / ratio), r = rFor(ratio, nb);
+    const nb = Math.round(Nfill);
     let s = Math.cbrt(Vvis / nb), pts = [];
     for (let iter = 0; iter < 20; iter++) { pts = [];
-      for (let y = b.y0 + r; y < b.y1; y += s) for (let x = b.minX + s * .5; x < b.maxX; x += s) for (let z = b.minZ + s * .5; z < b.maxZ; z += s) {
-        const jx = x + (rng() - .5) * s * .15, jz = z + (rng() - .5) * s * .15; if (inside(jx, jz, y) && sample(jx, y, jz) > r * .8) pts.push([jx, y, jz]); }
+      for (let y = b.y0 + R0; y < b.y1; y += s) for (let x = b.minX + s * .5; x < b.maxX; x += s) for (let z = b.minZ + s * .5; z < b.maxZ; z += s) {
+        const jx = x + (rng() - .5) * s * .15, jz = z + (rng() - .5) * s * .15; if (inside(jx, jz, y) && sample(jx, y, jz) > R0 * .8) pts.push([jx, y, jz]); }
       if (pts.length >= nb) break; s *= .95; }
-    pts.sort((a, c) => a[1] - c[1]); pts.slice(0, nb).forEach(([x, y, z]) => addBall(x, y, z, r, 0, 0, 0, true));
+    pts.sort((a, c) => a[1] - c[1]); pts.slice(0, nb).forEach(([x, y, z]) => addBall(x, y, z, 0, 0, 0, true));
     queue.length = 0; qi = 0; P.count = guess; phase = 'reveal'; P.done = true; P.phase = 'real'; draw(0);
   };
   P.dispose = () => { mesh.dispose(); occl.geometry.dispose(); occl.material.dispose(); pit.geometry.dispose(); pitM.dispose(); pitFloor.geometry.dispose(); pitFloor.material.dispose();
@@ -1556,7 +1712,7 @@ function setupRound(idx) {
       const u = (Math.max(a[2], c[2]) - Math.min(a[0], c[0])) * (Math.max(a[3], c[3]) - Math.min(a[1], c[1])) - (a[2] - a[0]) * (a[3] - a[1]) - (c[2] - c[0]) * (c[3] - c[1]); if (u < bc) { bc = u; bi = i; bj = j; } }
     const a = contacts[bi], c = contacts[bj]; contacts[bi] = [Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.max(a[2], c[2]), Math.max(a[3], c[3])]; contacts.splice(bj, 1);
   }
-  model.contacts = contacts;
+  model.contacts = contacts; model.fit = FILL_FIT[obj.model] || 1;
   // scoop sits just to the right of the object, as seen from the default view
   const az = model.view.az, right = new V3(Math.cos(az), 0, -Math.sin(az)), toward = new V3(Math.sin(az), 0, Math.cos(az));
   const he = Math.abs(right.x) * size.x / 2 + Math.abs(right.z) * size.z / 2, hf = Math.abs(toward.x) * size.x / 2 + Math.abs(toward.z) * size.z / 2;
@@ -1952,7 +2108,7 @@ function frame(now) {
   if (R && R.pour) { const P = R.pour; groundU.uHR.value = P.hole || 0; groundU.uHC.value.set(...P.holeC); P.isl.forEach((v, i) => groundU.uIsl.value[i].set(...v)); groundU.uIslN.value = P.isl.length; groundU.uIslE.value = P.islE; }
   animDims(dt);
   cam.near = Math.max(.002, d * .01); cam.far = d * 6 + (R ? R.objSize * 4 : 100); cam.updateProjectionMatrix();
-  updateFill(dt);
+  if (homeEl.classList.contains('hidden')) updateFill(dt);   // (paused while the home page covers the scene)
   if (booted && homeEl.classList.contains('hidden')) renderer.render(scene, cam);   // skip drawing while the home page covers the scene
   updateLabels(dt); drawConfetti(dt);
   requestAnimationFrame(frame);
@@ -1986,7 +2142,10 @@ function renderHome() {
   $('hStreakN').textContent = curStreak();
 }
 function showHome() {
-  if (state === 'fill' || state === 'intro') return;
+  if (!homeEl.classList.contains('hidden')) return;
+  if (state === 'fill' || state === 'intro') {   // leaving mid-round: stop everything; Play picks the day back up from where it's saved
+    camTween = null; needReboot = true; state = 'idle'; if (R) R.pouring = false; controls.enabled = false;
+    ui.counter.className = ''; ui.form.className = 'off'; showChips(false); hideCard(); ui.results.classList.remove('show'); }
   endPractice();
   renderHome(); homeEl.classList.remove('hidden'); try { $('heroVid').play().catch(() => {}); } catch (e) {}
 }
@@ -2017,7 +2176,10 @@ $('hColl').addEventListener('click', () => {
     return `<div class="row"><span class="e">${a == null ? '❔' : emoji(a)}</span><div class="nm"><b>${a == null ? '???' : o.name}</b><span>${a == null ? 'not scooped yet' : `best ${a}% · ${fmt(answerFor(o))} scoops`}</span></div></div>`; }).join('');
   openModal('mColl');
 });
-document.querySelector('.word').addEventListener('click', showHome);
+// one wordmark for every page, sitting exactly where the game header puts it
+const logo = $('logo'), placeLogo = () => { const r = document.querySelector('#app .word').getBoundingClientRect(); logo.style.transform = `translate(${r.left}px,${r.top}px)`; };
+placeLogo(); addEventListener('resize', placeLogo); if (document.fonts) document.fonts.ready.then(placeLogo);
+logo.addEventListener('click', () => { ensureAudio(); showHome(); });
 renderHome();
 requestAnimationFrame(frame);
 </script>
