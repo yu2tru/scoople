@@ -373,7 +373,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.14';
+window.SCOOPLE_BUILD = '2026-10-21.15';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1352,7 +1352,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const hmap = new Float32Array(HN).fill(b.y0), resT = new Float32Array(HN).fill(-1), resTop = new Float32Array(HN);
   const hcell = (x, z) => clamp(Math.floor((x - b.minX) / hgx), 0, HG - 1) + HG * clamp(Math.floor((z - b.minZ) / hgz), 0, HG - 1);
   const cellX = c => b.minX + (c % HG + .5) * hgx, cellZ = c => b.minZ + (Math.floor(c / HG) + .5) * hgz;
-  const effH = c => t < resT[c] && !holeLive ? Math.max(hmap[c], resTop[c]) : hmap[c];   // (while it pours out, the pile is re-measured instead)
+  const effH = c => t < resT[c] ? Math.max(hmap[c], resTop[c]) : hmap[c];
   const foot2 = (x, z, fn) => { const st = Math.min(hgx, hgz, R0) * .99; for (let xx = x - R0; xx <= x + R0 + 1e-9; xx += st) for (let zz = z - R0; zz <= z + R0 + 1e-9; zz += st) fn(hcell(xx, zz)); };
   const settle = i => { const top = py[i] + R0 * .9; if (!(px[i] > b.minX && px[i] < b.maxX && pz[i] > b.minZ && pz[i] < b.maxZ) && top > spillTop) spillTop = top; foot2(px[i], pz[i], c => { if (top > hmap[c]) hmap[c] = top; }); };
   const reserve = (x, z, top, until) => foot2(x, z, c => { resTop[c] = Math.max(effH(c), top); resT[c] = until; });
@@ -1683,9 +1683,9 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     // pour: new balls on schedule; ones that found no room yet try again each frame
     if (sdfO && !doorOpen && n >= Nfill * .85) openDoor();   // nearly full: open up
     if (holeLive && (flowT += dt) > .25) { const rate = (spilled - flowLast) / flowT; flowLast = spilled; flowT = 0;
-      hmap.fill(b.y0); let k = 0; for (let i = 0; i < n; i++) if (alive[i] && inn[i]) { settle(i); k++; }   // it's draining: re-measure the pile
+      hmap.fill(b.y0); resT.fill(-1); let k = 0; for (let i = 0; i < n; i++) if (alive[i] && inn[i]) { settle(i); k++; }   // it's draining: re-measure the pile
       let room = 0; for (const c of cells) if (ceilC[c] - hmap[c] >= roomH * 1.5) room++;
-      exitOK = k >= Nfill * .85 && room <= cells.length * .08;   // only as much goes out as comes in: it stays full while it spills
+      exitOK = k >= Nfill * .85 && room <= cells.length * .15;   // only as much goes out as comes in: it stays full while it spills
       flowGain = clamp(flowGain * Math.sqrt((pourRate * 1.2 + 5) / (rate + 5)), .4, 30); }   // drain a bit faster than the pour, so nothing clogs
     if ((phase === 'A' && pt > PHASE_MAX - (holeLive ? 1.1 : 1.6)) || (phase === 'B' && pt > bMax() - 1.6)) { queue.length = qi; wait.length = 0; holeLive = false; }   // nothing new lands after the stage (and the outflow stops with the inflow)
     const fresh = []; while (qi < queue.length && queue[qi].t <= t) fresh.push(queue[qi++]);
