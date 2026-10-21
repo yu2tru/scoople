@@ -375,7 +375,7 @@ button.row:active{transform:scale(.98)}
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.7';
+window.SCOOPLE_BUILD = '2026-10-21.8';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1650,7 +1650,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const drained = () => qi >= queue.length && !wait.length;
   const quiet = () => drained() && t - lastSpawnT > .5 && (!anyAwake() || t - lastSpawnT > 2.2);
   const markOut = heap => { let k = 0;   // spilled over (and when it was too many: heaped up above the brim)
-    for (let i = 0; i < n; i++) if (alive[i] && (!inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)) || (!closed && py[i] > b.y1 + R0 * .15 && (heap || guided[i] === 1)))) { out[i] = 1; k++; } return k; };   // (a ball that never got in is a stray too)
+    for (let i = 0; i < n; i++) if (alive[i] && !(sdfO && holeBox.containsPoint(_hp.set(px[i], py[i], pz[i]))) && (!inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)) || (!closed && py[i] > b.y1 + R0 * .15 && (heap || guided[i] === 1)))) { out[i] = 1; k++; } return k; };   // (a ball that never got in is a stray too)
   const bMax = () => guess > answer ? 3.4 : PHASE_MAX;
   const startB = () => { phase = 'B'; pt = 0;
     const need = Math.max(0, Math.round(Nfill - insideCount()));
