@@ -375,7 +375,7 @@ button.row:active{transform:scale(.98)}
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.11';
+window.SCOOPLE_BUILD = '2026-10-21.12';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1420,7 +1420,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; leafOn = leaves.length > 0; hooks.doorOpened && hooks.doorOpened();
     if (sdfO) { sdf = sdfO; holeLive = true; holeBox.getCenter(holeC); for (let i = 0; i < n; i++) if (alive[i] && inn[i]) { awake[i] = 1; still[i] = 0; } } };
   // the whole inside flows toward the opening, faster or slower so what pours out keeps pace with what pours in
-  let flowGain = 1, flowT = 0, flowLast = 0, pourRate = 1; const holeC = new V3();
+  let flowGain = 1, flowT = 0, flowLast = 0, pourRate = 1, exitOK = true; const holeC = new V3();
   const emitOut = () => {   // one spilled ball out of the door; it can start once the door is part-way open and there's space
     if (!ov || !ov.hole) return true;
     openDoor(); if (leaves.length && doorT < .35) return false;
@@ -1544,7 +1544,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         if (guided[i] && py[i] > b.y1 - R0 && (guided[i] === 1 || py[i] < mouthTop) && !mouthOK(px[i], pz[i])) {   // the funnel: on the way in it stays over the mouth
           if (mouthOK(qx[i], qz[i])) { px[i] = qx[i]; pz[i] = qz[i]; } else if (guided[i] === 1) { px[i] += (cx - px[i]) * .2; pz[i] += (cz - pz[i]) * .2; }
           vx[i] = vz[i] = 0; con[i]++; }
-        if (holeLive && inn[i] && holeBox.containsPoint(_hp.set(px[i], py[i], pz[i]))) {
+        if (holeLive && exitOK && inn[i] && holeBox.containsPoint(_hp.set(px[i], py[i], pz[i]))) {
           if (!inside(px[i], pz[i], py[i])) { inn[i] = 0; spilled++; holeWake.push(i);
             const gv = Math.sqrt(g * H) * (.45 + rng() * .3); px[i] += flowDir.x * R0 * .3; pz[i] += flowDir.z * R0 * .3;
             qx[i] = px[i] - (flowDir.x * gv + (rng() - .5) * gv * .5) * h; qz[i] = pz[i] - (flowDir.z * gv + (rng() - .5) * gv * .5) * h; qy[i] = py[i] - (flowDir.y * gv) * h; if (spilled >= spillGoal) holeLive = false; } }
@@ -1666,7 +1666,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     // pour: new balls on schedule; ones that found no room yet try again each frame
     if (sdfO && !doorOpen && n >= Nfill * .85) openDoor();   // nearly full: open up
     if (holeLive && (flowT += dt) > .25) { const rate = (spilled - flowLast) / flowT; flowLast = spilled; flowT = 0;
-      hmap.fill(b.y0); for (let i = 0; i < n; i++) if (alive[i] && inn[i]) settle(i);   // it's draining: re-measure the pile
+      hmap.fill(b.y0); let k = 0; for (let i = 0; i < n; i++) if (alive[i] && inn[i]) { settle(i); k++; }   // it's draining: re-measure the pile
+      exitOK = k >= Nfill * .92;   // only as much goes out as comes in: it stays full while it spills
       flowGain = clamp(flowGain * Math.sqrt((pourRate + 5) / (rate + 5)), .4, 30); }
     if ((phase === 'A' && pt > PHASE_MAX - (holeLive ? 1.1 : 1.6)) || (phase === 'B' && pt > bMax() - 1.6)) { queue.length = qi; wait.length = 0; holeLive = false; }   // nothing new lands after the stage (and the outflow stops with the inflow)
     const fresh = []; while (qi < queue.length && queue[qi].t <= t) fresh.push(queue[qi++]);
