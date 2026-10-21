@@ -168,6 +168,36 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
   opacity:0;transition:.25s;z-index:30;pointer-events:none}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:15}
+/* ---------- home ---------- */
+#home{position:fixed;inset:0;z-index:12;background:var(--bg);overflow-y:auto;overflow-x:hidden;transition:opacity .35s,transform .35s;-webkit-overflow-scrolling:touch}
+#home.hidden{opacity:0;transform:scale(1.02);pointer-events:none}
+.home-col{width:min(480px,100%);margin:0 auto;padding:0 0 calc(24px + env(safe-area-inset-bottom))}
+.hero{position:relative;height:34vh;min-height:220px;max-height:340px;overflow:hidden;border-radius:0 0 28px 28px;background:#efcfb8}
+.hero video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(247,220,200,.85) 0%,rgba(247,220,200,0) 34%,rgba(247,220,200,0) 78%,rgba(247,220,200,.55) 100%);pointer-events:none}
+.hero-name{position:absolute;z-index:1;left:18px;top:calc(env(safe-area-inset-top) + 10px);font-weight:900;font-size:44px;letter-spacing:-.065em;line-height:1}
+.home-body{padding:16px 16px 0}
+.home-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.home-date{font-weight:800;font-size:16px;color:#6f625c;letter-spacing:-.02em}
+.home-icons{display:flex;gap:8px}
+.rbtn{width:46px;height:46px;border-radius:50%;background:var(--card);display:grid;place-items:center;box-shadow:0 2px 0 rgba(29,26,25,.05)}
+.rbtn svg{width:22px;height:22px}
+.hcard{background:var(--card);border-radius:24px;padding:16px 16px 16px;margin-bottom:10px;box-shadow:0 2px 0 rgba(29,26,25,.04)}
+.eyebrow{font-weight:800;font-size:12.5px;letter-spacing:.14em;color:#8a7c75;text-transform:uppercase}
+.today-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px}
+.today-row b{font-weight:900;font-size:26px;letter-spacing:-.05em}
+.dots{display:flex;gap:6px}
+.dots i{width:14px;height:14px;border-radius:50%;border:2.5px solid #4b413c;box-sizing:border-box}
+.dots i.good{background:var(--t-good);border-color:var(--t-good)} .dots i.mid{background:var(--t-mid);border-color:var(--t-mid)} .dots i.low{background:var(--t-low);border-color:var(--t-low)}
+.hsub{font-weight:700;font-size:14.5px;color:#7a6d66;margin:6px 0 14px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.tile{display:flex;align-items:center;gap:7px;min-height:60px;padding:10px 9px;border-radius:18px;background:rgba(247,220,200,.35);font-weight:900;font-size:14px;letter-spacing:-.03em;text-align:left;line-height:1.1}
+.tile .ic{font-size:22px;flex:none}
+.tile small{display:block;font-weight:800;font-size:11px;color:#9a8a82;letter-spacing:0;margin-top:2px}
+.tile[disabled]{opacity:.55;cursor:default}
+.tiles2{display:grid;grid-template-columns:1.25fr 1fr .8fr;gap:8px}
+.tiles2 .tile{background:var(--card);min-height:68px;box-shadow:0 2px 0 rgba(29,26,25,.04)}
+#app .word{cursor:pointer;pointer-events:auto}
 #err{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:30px;font-weight:800}
 @media (prefers-reduced-motion: reduce){
   #card.show{animation:fade .25s forwards;transform:none}
@@ -242,6 +272,14 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
   </div>
 </div>
 
+<div class="modal" id="mColl" role="dialog" aria-modal="true" aria-labelledby="cT">
+  <div class="sheet">
+    <button class="x" data-close aria-label="Close">×</button>
+    <h2 id="cT">collection</h2>
+    <div class="rows" id="collRows"></div>
+  </div>
+</div>
+
 <div class="modal" id="mStats" role="dialog" aria-modal="true" aria-labelledby="sT">
   <div class="sheet">
     <button class="x" data-close aria-label="Close">×</button>
@@ -261,6 +299,43 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
     <div class="statgrid" id="eStats" style="grid-template-columns:repeat(3,1fr)"></div>
     <button class="pill wide" id="bShare">Share</button>
     <div class="next" id="eNext"></div>
+  </div>
+</div>
+
+<div id="home" aria-label="Home">
+  <div class="home-col">
+    <div class="hero">
+      <!-- Gameplay clip: drop a recording at assets/hero.mp4 and it plays here; the poster shows until then. -->
+      <video id="heroVid" autoplay muted loop playsinline preload="auto" poster="assets/hero-placeholder.jpg"><source src="assets/hero.mp4" type="video/mp4"></video>
+      <div class="hero-name">scoople</div>
+    </div>
+    <div class="home-body">
+      <div class="home-row"><div class="home-date" id="hDate"></div>
+        <div class="home-icons">
+          <button class="rbtn" id="hSound" aria-label="Toggle sound"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><g class="sOn"><path d="M15.5 9a4.2 4.2 0 0 1 0 6"/><path d="M18.2 6.5a8 8 0 0 1 0 11"/></g><g class="sOff" style="display:none"><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></svg></button>
+          <button class="rbtn" id="hHelp" aria-label="How to play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg></button>
+        </div>
+      </div>
+      <div class="hcard">
+        <div class="eyebrow">Today</div>
+        <div class="today-row"><b>Five objects</b><div class="dots" id="hDots"><i></i><i></i><i></i><i></i><i></i></div></div>
+        <div class="hsub" id="hSub">Guess how many scoops fill each one · about 3 min</div>
+        <button class="pill wide" id="hPlay">Play today</button>
+      </div>
+      <div class="hcard">
+        <div class="eyebrow">More ways to play</div>
+        <div class="tiles">
+          <button class="tile" id="hHow"><span class="ic">📖</span><span>How to play<small>rules</small></span></button>
+          <button class="tile" disabled><span class="ic">🎲</span><span>Practice<small>soon</small></span></button>
+          <button class="tile" disabled><span class="ic">🏆</span><span>Gauntlet<small>soon</small></span></button>
+        </div>
+      </div>
+      <div class="tiles2">
+        <button class="tile" id="hColl"><span class="ic">🍨</span><span>Collection<small id="hCollN">0/10</small></span></button>
+        <button class="tile" id="hStats"><span class="ic">📊</span><span>Stats<small>your history</small></span></button>
+        <button class="tile" id="hStreak" aria-label="Current streak"><span class="ic">🔥</span><span><span id="hStreakN">0</span><small>streak</small></span></button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -423,7 +498,8 @@ function chime(good) {
 function tick() { if (muted || !AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
   o.type = 'square'; o.frequency.value = 1800; g.gain.setValueAtTime(.025, t); g.gain.exponentialRampToValueAtTime(.0001, t + .03);
   o.connect(g).connect(master); o.start(t); o.stop(t + .04); }
-function setMuted(m) { muted = m; DB.muted = m; save(); $('sOn').style.display = m ? 'none' : ''; $('sOff').style.display = m ? '' : 'none'; }
+function setMuted(m) { muted = m; DB.muted = m; save(); $('sOn').style.display = m ? 'none' : ''; $('sOff').style.display = m ? '' : 'none';
+  document.querySelectorAll('.sOn').forEach(e => e.style.display = m ? 'none' : ''); document.querySelectorAll('.sOff').forEach(e => e.style.display = m ? '' : 'none'); }
 setMuted(muted);
 addEventListener('pointerdown', ensureAudio, { passive: true });
 addEventListener('keydown', ensureAudio);
@@ -1167,7 +1243,10 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   // ---- spawning ----
   const queue = [], retry = []; let qi = 0, retryT = 0;
   const skyY = () => b.y1 + H * .5 + objSize * .25 + rng() * objSize * .1;
-  const spot = () => { for (let k = 0; k < 40; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (inside(x, z, b.y1 - 1e-3)) return [x, z]; } return [cx, cz]; };
+  const spot = (r = 0) => { const y = b.y1 - 1e-3, e = r * 1.25;
+    for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng());
+      if (inside(x, z, y) && (!e || (inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y)))) return [x, z]; }
+    return r ? spot(0) : [cx, cz]; };
   let doorOpen = false, doorT = 0;
   const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; hooks.doorOpened && hooks.doorOpened(); }; // walls stay sealed: only new spill comes out
   const emitOut = r => { // out of the door / burst point
@@ -1199,7 +1278,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       if (best && (!full || !occupied(best[0], best[1], best[2], r))) { addBall(best[0], best[1], best[2], r, 0, -Math.sqrt(g * r), 0); return; }
       if (!full) { q.tries = (q.tries || 0) + 1; if (q.tries < 8) { retry.push(q); return; } }   // no room yet: wait for the pile to settle, then try again
       if (q.over && ov && ov.hole) emitOut(r);   // corrections never spill: a full car just stops taking more
-    } else { let x, z, y = skyY(); for (let k = 0; k < 6; k++) { [x, z] = spot(); if (!occupied(x, y, z, r * 1.2)) break; y += r * 2.5; }
+    } else { let x, z, y = skyY(); for (let k = 0; k < 6; k++) { [x, z] = spot(r); if (!occupied(x, y, z, r * 1.2)) break; y += r * 2.5; }
       addBall(x, y, z, r, 0, -rng() * Math.sqrt(g * H) * .3, 0); }
   };
   const schedule = (scoops, t0, over) => {   // returns the number of balls
@@ -1249,13 +1328,14 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       // velocities, friction, sleeping
       for (let i = 0; i < n; i++) { if (!awake[i]) continue;
         vx[i] = (px[i] - qx[i]) / h; vy[i] = (py[i] - qy[i]) / h; vz[i] = (pz[i] - qz[i]) / h;
-        { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = Math.max(pm[i], .15 * Math.sqrt(g * rad[i]));  // pushes never add energy (no creeping speed-up in a crowd)
+        { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = Math.max(pm[i], .08 * Math.sqrt(g * rad[i]));  // pushes never add energy (no creeping speed-up in a crowd)
           if (sp > cap) { const f = cap / sp; vx[i] *= f; vy[i] *= f; vz[i] *= f; } }
-        if (con[i]) { vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= damp; }
+        if (con[i]) { vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= .3; }   // ice cream doesn't bounce much
         if (sup[i]) { vx[i] *= sdamp; vy[i] *= sdamp; vz[i] *= sdamp;
           if (!landed[i]) { landed[i] = 1; if (plopBudget > 0) { plopBudget--; plop(.75 + rng() * .5, .1); } } }
         const sp2 = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i], thr = .25 * Math.sqrt(g * rad[i]);
-        if (sup[i] >= 2 && sp2 < thr * thr) { still[i] += h; if (still[i] > .18 && !out[i]) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; settle(i); } } else still[i] = 0;
+        if (con[i] && sp2 < thr * thr) { still[i] += h;   // resting: supported from below, or wedged in place for a while
+          if (!out[i] && (sup[i] >= 2 ? still[i] > .18 : still[i] > .6)) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; settle(i); } } else still[i] = 0;
         if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; }
       }
     }
@@ -1271,7 +1351,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
 
   // ---- timeline ----
   const P = Object.assign(P0, { group, phase: 'your', count: 0, done: false, extent: footR, hole: 0 });
-  let pouredA = 0, t = 0, phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0;
+  let doneT = 0, pouredA = 0, t = 0, phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0;
   const startA = () => { const s = schedule(guess, .15, true); lastSpawnT = .15 + s.dur; };
   startA();
   const settled = () => qi >= queue.length && !retry.length && (!anyAwake() || t - lastSpawnT > 2.6) && t - lastSpawnT > .5;
@@ -1310,6 +1390,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       P.hole = holeOn ? holeR : 0;
     }
     if (phase === 'reveal' && !P.done) { P.done = true; P.phase = 'real'; }
+    if (P.done && anyAwake()) { doneT += dt; if (doneT > 1.5)   // tidy up: slow stragglers come to rest shortly after the round
+      for (let i = 0; i < n; i++) if (awake[i] && !out[i] && vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] < 9 * .0625 * g * rad[i]) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; settle(i); } }
     extentT -= dt; if (extentT <= 0) { extentT = .25; let e = footR;
       for (let i = 0; i < n; i++) if (alive[i] && py[i] > -rad[i]) e = Math.max(e, Math.hypot(px[i] - cx, pz[i] - cz) + rad[i]); P.extent = e; }
     draw(dt);
@@ -1586,6 +1668,7 @@ function submitGuess() {
   const guess = Number(guessDigits), acc = accuracy(guess, R.answer);
   R.guess = guess; R.acc = acc;
   DB.day.rounds[R.idx] = { id: R.obj.id, guess, answer: R.answer, acc };
+  DB.seen ||= {}; if (!DB.seen[R.obj.id] || acc > DB.seen[R.obj.id]) DB.seen[R.obj.id] = acc;   // best accuracy per object
   if (DB.day.rounds.filter(Boolean).length >= DAILY.length && !DB.day.done) completeDay();
   save();
   state = 'fill'; lockCam(); camTween = null;
@@ -1601,7 +1684,7 @@ function beginFill(instant) {
   if (R.model.closed && !spec.overflow)   // closed shapes with no door break open on the side facing the camera
     spec.overflow = { type: 'burst', hole: true, at: new V3(R.center.x, lerp(b.y0, b.y1, .3), b.maxZ), dir: [0, 1], w: Math.min(b.maxX - b.minX, H0(b)) * .3, h: H0(b) * .2 };
   const shells = []; R.model.group.traverse(n => n.userData.shell && shells.push(n));
-  R.shells = shells; R.shellT = 0; R.doorT = -1; R.revealT = -1; R.realAt = 0;
+  R.shells = shells; R.shellT = 0; R.doorT = -1; R.revealT = -1; R.realAt = 0; R.zb = null;
   const hooks = { doorOpened: () => { R.doorT = 0; }, cutStart: () => plop(.5, .25), correctionStart: () => { ui.counter.classList.add('real'); R.realAt = performance.now(); } };
   R.pour = makePour(R.model, R.answer, R.guess, R.objSize, R.box, R.rng, hooks); scene.add(R.pour.group);
   if (instant) { R.pour.finishInstant(); setShellOpacity(R.model.closed ? .28 : 1); return; }
@@ -1626,9 +1709,15 @@ function updateFill(dt) {
   ui.cnum.textContent = fmt(R.pour.count);
   tickT -= dt; if (R.pour.count !== lastCount && tickT <= 0) { tick(); tickT = .07; } lastCount = R.pour.count;
   // back the camera off when the pile or the floor hole grows past the view
-  const want = R.pour.zoomBack ? R.fillDist : Math.max(R.fillDist, fitDist(Math.max(R.pour.extent, R.pour.hole) * 1.08));
   const off = cam.position.clone().sub(controls.target), d = off.length();
-  if (d < want - 1e-6 || (R.pour.zoomBack && d > want + 1e-6)) { off.setLength(lerp(d, want, 1 - Math.exp(-dt * (R.pour.zoomBack ? 2 : 2.5)))); cam.position.copy(controls.target).add(off); }
+  if (R.pour.zoomBack) {          // ease in-out back to the normal view while the floor closes
+    if (R.zb == null) R.zb = { d0: d, t: 0 };
+    R.zb.t = Math.min(1, R.zb.t + dt / (reduceMotion ? .3 : 1.1));
+    off.setLength(lerp(R.zb.d0, R.fillDist, easeInOutCubic(R.zb.t))); cam.position.copy(controls.target).add(off);
+  } else {
+    const want = Math.max(R.fillDist, fitDist(Math.max(R.pour.extent, R.pour.hole) * 1.08));
+    if (d < want - 1e-6) { off.setLength(lerp(d, want, 1 - Math.exp(-dt * 2.5))); cam.position.copy(controls.target).add(off); }
+  }
   if (R.pour.done) {
     if (R.revealT < 0) { R.revealT = R.realAt ? .6 : 0; ui.counter.classList.add('real'); chime(R.acc >= 80); }
     R.revealT += dt; if (R.revealT > (reduceMotion ? .35 : 1.0)) finishFill();
@@ -1788,7 +1877,7 @@ function frame(now) {
   animDims(dt);
   cam.near = Math.max(.002, d * .01); cam.far = d * 6 + (R ? R.objSize * 4 : 100); cam.updateProjectionMatrix();
   updateFill(dt);
-  renderer.render(scene, cam);
+  if (booted && homeEl.classList.contains('hidden')) renderer.render(scene, cam);   // skip drawing while the home page covers the scene
   updateLabels(dt); drawConfetti(dt);
   requestAnimationFrame(frame);
 }
@@ -1809,7 +1898,36 @@ function boot() {
   if (!DB.seenHelp) { DB.seenHelp = true; save(); setupRound(done); setQuestion(R.obj); renderProgress(done); Object.assign(camS, introView()); applyCam(); onHelpClose = go; openModal('mHelp'); }
   else go();
 }
-boot();
+/* ===================== home ===================== */
+const homeEl = $('home'); let booted = false;
+function renderHome() {
+  $('hDate').textContent = `No. ${PUZZLE_NO} · ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`;
+  const rs = DB.day.rounds, n = rs.filter(Boolean).length, all = DAILY.length;
+  [...$('hDots').children].forEach((el, i) => { el.className = rs[i] ? tier(rs[i].acc) : ''; });
+  $('hPlay').textContent = n >= all ? 'See results' : n ? `Continue · ${n} of ${all} done` : 'Play today';
+  $('hSub').textContent = n >= all ? `You scored ${dayTotal()}/500 · a new scoople comes out tomorrow` : 'Guess how many scoops fill each one · about 3 min';
+  $('hCollN').textContent = `${Object.keys(DB.seen || {}).length}/${OBJECTS.length}`;
+  $('hStreakN').textContent = curStreak();
+}
+function showHome() {
+  if (state === 'fill' || state === 'intro') return;
+  renderHome(); homeEl.classList.remove('hidden'); try { $('heroVid').play().catch(() => {}); } catch (e) {}
+}
+function hideHome() { homeEl.classList.add('hidden'); try { $('heroVid').pause(); } catch (e) {} }
+$('hPlay').addEventListener('click', () => { ensureAudio(); hideHome(); if (!booted) { booted = true; boot(); } });
+$('hHelp').addEventListener('click', () => openModal('mHelp'));
+$('hHow').addEventListener('click', () => openModal('mHelp'));
+$('hStats').addEventListener('click', openStats);
+$('hStreak').addEventListener('click', openStats);
+$('hSound').addEventListener('click', () => { ensureAudio(); setMuted(!muted); if (!muted) plop(1, .2); });
+$('hColl').addEventListener('click', () => {
+  const seen = DB.seen || {};
+  $('collRows').innerHTML = OBJECTS.map(o => { const a = seen[o.id];
+    return `<div class="row"><span class="e">${a == null ? '❔' : emoji(a)}</span><div class="nm"><b>${a == null ? '???' : o.name}</b><span>${a == null ? 'not scooped yet' : `best ${a}% · ${fmt(answerFor(o))} scoops`}</span></div></div>`; }).join('');
+  openModal('mColl');
+});
+document.querySelector('.word').addEventListener('click', showHome);
+renderHome();
 requestAnimationFrame(frame);
 </script>
 </body>
