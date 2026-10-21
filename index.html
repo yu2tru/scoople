@@ -362,7 +362,7 @@ button.row:active{transform:scale(.98)}
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.3';
+window.SCOOPLE_BUILD = '2026-10-21.4';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1339,21 +1339,19 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng());
       if (inside(x, z, y) && inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y)) return [x, z]; }
     return [cx, cz]; };
-  const TM = { step: 0, draw: 0 }; P0.TM = TM;
-  let noRoom = false; const SC = { none: 0, wall: 0, bh: 0, occ: 0, ok: 0 };
+  let noRoom = false;
   // open objects: a ball meant to go in can't wander out over the rim (an invisible funnel above the mouth); spill balls can
   const mouthOK = (x, z) => { const y = b.y1 - 1e-3, e = R0 * .9; return inside(x, z, y) && inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y); };
   const spawnIn = (guide = true) => {   // one ball into the object; false if it can't go in right now (noRoom: nowhere left at all)
     if (closed) {           // drop it from just under the roof, over the lowest open column
       let best = -1, bh = Infinity; noRoom = false;
       for (let k = 0; k < 24; k++) { const c = cells[(rng() * cells.length) | 0], e = effH(c); if (ceilC[c] - e >= roomH && e < bh) { bh = e; best = c; } }
-      if (best < 0) { noRoom = true; SC.none++; return false; }
+      if (best < 0) { noRoom = true; return false; }
       let walls = 0;
       for (let k = 0; k < 4; k++) { const x = cellX(best) + (rng() - .5) * hgx, z = cellZ(best) + (rng() - .5) * hgz, c = ceilAt(x, z), y = c - R0 - drop0;
-        if (c < 0 || !inside(x, z, y) || sample(x, y, z) < R0 * .5) { walls++; SC.wall++; continue; }
-        if (y - R0 < bh) { SC.bh++; continue; }   // (balls on their way down will fill this one)
-        if (occupied(x, y, z, 1.02)) { SC.occ++; continue; }
-        SC.ok++;
+        if (c < 0 || !inside(x, z, y) || sample(x, y, z) < R0 * .5) { walls++; continue; }
+        if (y - R0 < bh) continue;   // (balls on their way down will fill this one)
+        if (occupied(x, y, z, 1.02)) continue;
         addBall(x, y, z, 0, -Math.sqrt(g * R0), 0); reserve(x, z, bh + 1.6 * R0, t + Math.sqrt(2 * Math.max(y - bh, 0) / g) + .4); return true; }
       if (walls === 4) hmap[best] = Math.max(hmap[best], ceilC[best]);   // a ball can't fit in this column at all
       return false;
@@ -1572,7 +1570,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       wait.length = 0; wait.push(...keep); }
     for (const q of fresh) { if (phase === 'A') countAcc += q.scoops; q.t1 = t; if (!trySpawn(q)) wait.push(q); }
     if (phase === 'A') P.count = Math.min(guess, Math.round(countAcc));
-    const _t0 = performance.now(); if (anyAwake()) step(dt); TM.step += performance.now() - _t0;
+    if (anyAwake()) step(dt);
     if (phase === 'A') {
       if (quiet() || pt > PHASE_MAX - .3) { P.count = guess; queue.length = qi; wait.length = 0;
         if (guess !== answer) hooks.correctionStart && hooks.correctionStart();
@@ -1610,10 +1608,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     extentT -= dt; if (extentT <= 0) { extentT = .25; let e = footR;
       for (let i = 0; i < n; i++) if (alive[i] && py[i] > -R0) e = Math.max(e, Math.hypot(px[i] - cx, pz[i] - cz) + R0); P.extent = e; }
     P.phase = phase === 'A' ? 'your' : 'real'; P.stage = phase;
-    const _t1 = performance.now(); draw(dt); TM.draw += performance.now() - _t1;
+    draw(dt);
   };
-  P.awakeInfo = () => { const o = []; for (let i = 0; i < n; i++) if (alive[i] && awake[i]) o.push({ i, p: [px[i], py[i], pz[i]].map(v => +v.toFixed(3)), v: +Math.hypot(vx[i], vy[i], vz[i]).toFixed(3), con: con[i], cK: cK[i], cW: cW[i], cAw: cAw[i], cn: Array.from(cN.subarray(i * MC * 3, i * MC * 3 + cK[i] * 3)).map(v => +v.toFixed(2)), tip: restDir(i), still: +still[i].toFixed(2), nud: nud[i], sdf: +sample(px[i], py[i], pz[i]).toFixed(4), R0 }); return o; };
-  P.spawnInfo = () => ({ cells: cells.length, R0, b, ceil: cells.slice(0, 5).map(c => [cellX(c), cellZ(c), ceilC[c], hmap[c]]), mid: [cx, cz, ceilAt(cx, cz), inside(cx, cz, b.y0 + H / 2), sample(cx, b.y0 + H / 2, cz)] });
   P.stats = () => { let aw = 0, ins = 0, outF = 0, perched = 0, floating = 0, ovl = 0;
     rebuildHash();
     for (let i = 0; i < n; i++) { if (!alive[i]) continue;
@@ -1624,7 +1620,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
           if (d < R0 * 2.06 && dy / d > .3) { k++; sx += dx / d; sy += dy / d; sz += dz / d; } if (d < R0 * 1.24) ovl++; return false; });
         const d = sample(px[i], py[i], pz[i]); if (d < R0 * 1.06) { const e = vs * .5, gy = sample(px[i], py[i] + e, pz[i]) - sample(px[i], py[i] - e, pz[i]); if (gy > .3 * e) { k++; sy += 1; } }
         if (!k) floating++; else if (k === 1 && py[i] > b.y1 - R0 * 2) perched++; } }
-    return { n, alive: ins + outF, awake: aw, inside: ins, outside: outF, perched, floating, overlaps: ovl, stage: phase, t: +t.toFixed(2), SC, q: queue.length - qi, w: wait.length, full: isFull(), ff: closed ? 0 : +fullFrac().toFixed(2), R0: +R0.toFixed(4), Nfill: Math.round(Nfill) }; };
+    return { n, alive: ins + outF, awake: aw, inside: ins, outside: outF, perched, floating, overlaps: ovl, stage: phase, t: +t.toFixed(2), q: queue.length - qi, w: wait.length, full: isFull(), ff: closed ? 0 : +fullFrac().toFixed(2), R0: +R0.toFixed(4), Nfill: Math.round(Nfill) }; };
   /* Skip straight to the end state: the object filled with the real amount */
   P.finishInstant = () => {
     const nb = Math.round(Nfill);
