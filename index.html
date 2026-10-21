@@ -373,7 +373,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.13';
+window.SCOOPLE_BUILD = '2026-10-21.14';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1588,6 +1588,20 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       }
     }
   };
+  // at the end: gently push apart any settled balls still pressed into each other (no merged scoops), keeping them off the walls
+  let relaxed2 = false;
+  const relax = () => { const lo = (2 * R0 * .96) ** 2;
+    for (let it = 0; it < 16; it++) { rebuildHash(); let moved = 0;
+      for (let i = 0; i < n; i++) { if (!alive[i] || out[i]) continue;
+        near(px[i], py[i], pz[i], j => { if (j <= i || !alive[j] || out[j]) return false;
+          const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j], d2 = dx * dx + dy * dy + dz * dz; if (d2 >= lo || d2 < 1e-12) return false;
+          const d = Math.sqrt(d2), p = (2 * R0 * .97 - d) * .5, ux = dx / d, uy = dy / d, uz = dz / d;
+          px[i] += ux * p; py[i] += uy * p; pz[i] += uz * p; px[j] -= ux * p; py[j] -= uy * p; pz[j] -= uz * p; moved++; return false; });
+        const w = sample(px[i], py[i], pz[i]); if (w < R0 * .95) { const e = vs * .5, gx = sample(px[i] + e, py[i], pz[i]) - sample(px[i] - e, py[i], pz[i]), gy = sample(px[i], py[i] + e, pz[i]) - sample(px[i], py[i] - e, pz[i]), gz = sample(px[i], py[i], pz[i] + e) - sample(px[i], py[i], pz[i] - e), gl = Math.hypot(gx, gy, gz);
+          if (gl > 1e-9 && gl < 1e8) { const q = R0 * .95 - w; px[i] += gx / gl * q; py[i] += gy / gl * q; pz[i] += gz / gl * q; } }
+        if (py[i] < R0) py[i] = R0; }
+      if (!moved) break; }
+    lastN = -1; };   // (redraw them all)
   const canRest = i => !near(px[i], py[i], pz[i], j => j !== i && alive[j] && !awake[j] && (px[j] - px[i]) ** 2 + (py[j] - py[i]) ** 2 + (pz[j] - pz[i]) ** 2 < (1.82 * R0) ** 2);   // not while it's still pressed into a settled one (no merged scoops)
   const sunkIn = i => near(px[i], py[i], pz[i], j => j !== i && alive[j] && !awake[j] && (px[j] - px[i]) ** 2 + (py[j] - py[i]) ** 2 + (pz[j] - pz[i]) ** 2 < (2 * R0 * .75) ** 2);
   const anyAwake = () => { for (let i = 0; i < n; i++) if (awake[i]) return true; return false; };
@@ -1654,7 +1668,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const quiet = () => drained() && t - lastSpawnT > .5 && (!anyAwake() || t - lastSpawnT > 2.2);
   const markOut = heap => { let k = 0;   // spilled over (and when it was too many: heaped up above the brim)
     for (let i = 0; i < n; i++) if (alive[i] && (!inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)) || (!closed && py[i] > b.y1 + R0 * .15 && (heap || guided[i] === 1)))) { out[i] = 1; k++; } return k; };   // (a ball that never got in is a stray too)
-  const bMax = () => guess > answer ? 3.4 : PHASE_MAX;
+  const bMax = () => guess > answer ? (closed ? 4 : 3.4) : PHASE_MAX;
   const startB = () => { phase = 'B'; pt = 0;
     const need = Math.max(0, Math.round(Nfill - insideCount()));
     let d = tFor(need); if (narrowMouth) d = Math.max(d, Math.min(need * .04, 2.8));
@@ -1670,7 +1684,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     if (sdfO && !doorOpen && n >= Nfill * .85) openDoor();   // nearly full: open up
     if (holeLive && (flowT += dt) > .25) { const rate = (spilled - flowLast) / flowT; flowLast = spilled; flowT = 0;
       hmap.fill(b.y0); let k = 0; for (let i = 0; i < n; i++) if (alive[i] && inn[i]) { settle(i); k++; }   // it's draining: re-measure the pile
-      exitOK = k >= Nfill * .92;   // only as much goes out as comes in: it stays full while it spills
+      let room = 0; for (const c of cells) if (ceilC[c] - hmap[c] >= roomH * 1.5) room++;
+      exitOK = k >= Nfill * .85 && room <= cells.length * .08;   // only as much goes out as comes in: it stays full while it spills
       flowGain = clamp(flowGain * Math.sqrt((pourRate * 1.2 + 5) / (rate + 5)), .4, 30); }   // drain a bit faster than the pour, so nothing clogs
     if ((phase === 'A' && pt > PHASE_MAX - (holeLive ? 1.1 : 1.6)) || (phase === 'B' && pt > bMax() - 1.6)) { queue.length = qi; wait.length = 0; holeLive = false; }   // nothing new lands after the stage (and the outflow stops with the inflow)
     const fresh = []; while (qi < queue.length && queue[qi].t <= t) fresh.push(queue[qi++]);
@@ -1722,9 +1737,10 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         if (heroFall && hero.visible) { heroV -= g * dt; hp.y += heroV * dt; if (hp.y < -D * .8) hero.visible = false; } }
       P.hole = holeOn ? holeR : 0;
     }
-    if (phase === 'reveal' && !P.done) P.done = true;
+    if (phase === 'reveal' && !P.done) { P.done = true; relax(); }
     if (P.done && anyAwake()) { doneT += dt;   // after the round: let stragglers come to rest, then stop simulating
       if (doneT > 2.5) for (let i = 0; i < n; i++) if (awake[i] && !out[i] && con[i] && vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] < .4 * g * R0) { const tp = restDir(i);
+        if (doneT > 6 && !relaxed2) { relaxed2 = true; relax(); }
         if ((tp === -1 && canRest(i)) || doneT > 6) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; if (sunkIn(i)) { alive[i] = 0; dead++; } else settle(i); } } }   // never freeze one balanced on an edge
     extentT -= dt; if (extentT <= 0) { extentT = .25; let e = footR;
       for (let i = 0; i < n; i++) if (alive[i] && py[i] > -R0) e = Math.max(e, Math.hypot(px[i] - cx, pz[i] - cz) + R0); P.extent = e; }
@@ -2271,7 +2287,7 @@ function renderHome() {
 // home: today's first object, slowly turning (drag to spin it)
 function homePreview() {
   setupRound(0); state = 'home'; needReboot = true; camTween = null; popK = 0;
-  const v = R.view, hr = $('homeHero').getBoundingClientRect(), k = clamp(innerHeight / Math.max(hr.height, 1) * .7, 1, 2.2);
+  const v = R.view, hr = $('homeHero').getBoundingClientRect(), k = clamp(innerHeight / Math.max(hr.height, 1) * .55, 1, 1.8);
   Object.assign(camS, v, { target: v.target.clone(), dist: v.dist * k }); applyCam();
   controls.target.copy(camS.target); controls.enabled = true; controls.enableZoom = false; controls.autoRotate = !reduceMotion; controls.autoRotateSpeed = .8; controls.update();
 }
