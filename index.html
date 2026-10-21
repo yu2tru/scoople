@@ -373,7 +373,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.16';
+window.SCOOPLE_BUILD = '2026-10-21.17';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1622,7 +1622,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   //  B: too few → more pour in until it's full      cut: too many → the floor opens and the spill falls away
   const P = Object.assign(P0, { group, phase: 'your', count: 0, done: false, extent: footR, hole: 0, R0, Nfill });
   const queue = [], wait = []; let qi = 0;
-  let phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0, doneT = 0, countAcc = 0, closeT = -1, pushT = 0;
+  let phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0, doneT = 0, countAcc = 0, closeT = -1, pushT = 0, remeasureT = 0;
   const hero = hooks.hero || null; let heroFall = false, heroV = 0;
   // ---- the hand that sweeps a heap off the top (open objects, too many) ----
   let hand = null, handT = -1, handReach = 0, handBody = null; const hDir = new V3(), hSide = new V3(), hC = new V3(), _hl = new V3();
@@ -1704,6 +1704,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         if (guess !== answer) hooks.correctionStart && hooks.correctionStart();
         if (!isFull()) startB(); else afterB(); } }
     else if (phase === 'B') {
+      if (sdfO && (remeasureT -= dt) <= 0) { remeasureT = .5; hmap.fill(b.y0); for (let i = 0; i < n; i++) if (alive[i] && inn[i] && !awake[i]) settle(i); }   // (after a spill the old pile heights are stale)
       if (drained() && t - lastSpawnT > .7 && pt < bMax() - 2.0 && !isFull()) {   // still not full: top it up, as much as the space left
         let room = 0; if (closed) { for (const c of cells) if (ceilC[c] - hmap[c] >= roomH) room++; } else room = (1 - fullFrac()) * cells.length;
         const k = Math.max(2, Math.round(Math.max(Nfill * .03, room / cells.length * Nfill * .5))); lastSpawnT = plan(k, 0, t + .05, .3, 'in'); }
