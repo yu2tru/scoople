@@ -362,7 +362,7 @@ button.row:active{transform:scale(.98)}
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.4';
+window.SCOOPLE_BUILD = '2026-10-21.5';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1153,7 +1153,7 @@ const PACK_BULK = .6, PACK_WALL = .45;        // how tightly loose balls pack in
 const PHASE_MAX = 7;                          // no stage of the pour (your scoops, the spill, the top-up) runs longer than this, in seconds
 const PIT_COLOR = '#5b3626';
 // measured: how many balls each object really holds when poured full, vs. the packing estimate (walls, roofs and odd shapes vary)
-const FILL_FIT = { bathtub: 1.02, urus: .78, bus: .83, pool: .72, colosseum: .95, fishbowl: 1.1, wheelbarrow: 1.08, phonebooth: .87, container: .77, balloon: .93 };
+const FILL_FIT = { bathtub: 1.02, urus: .78, bus: .83, pool: .72, colosseum: .95, fishbowl: .95, wheelbarrow: 1.08, phonebooth: .87, container: .77, balloon: .93 };
 
 function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const spec = model.fill, inside = spec.inside, b = spec.bounds, H = b.y1 - b.y0;
@@ -1339,7 +1339,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng());
       if (inside(x, z, y) && inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y)) return [x, z]; }
     return [cx, cz]; };
-  let noRoom = false;
+  let noRoom = false, mouthCheckT = 0, mouthPlug = false;
   // open objects: a ball meant to go in can't wander out over the rim (an invisible funnel above the mouth); spill balls can
   const mouthOK = (x, z) => { const y = b.y1 - 1e-3, e = R0 * .9; return inside(x, z, y) && inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y); };
   const spawnIn = (guide = true) => {   // one ball into the object; false if it can't go in right now (noRoom: nowhere left at all)
@@ -1356,11 +1356,15 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       if (walls === 4) hmap[best] = Math.max(hmap[best], ceilC[best]);   // a ball can't fit in this column at all
       return false;
     }
-    // open: drop from the sky over the lowest part of the pile
+    // open: drop from the sky over the lowest part of the pile (a narrow mouth: not while it's plugged by a ball sitting in it)
+    if (narrowMouth && guide && t > mouthCheckT) { mouthCheckT = t + .1; mouthPlug = false;
+      for (let i = 0; i < n; i++) if (alive[i] && guided[i] === 1 && still[i] > .2 && py[i] > b.y1 - R0) { mouthPlug = true; break; } }
+    if (narrowMouth && guide && mouthPlug) return false;
     let x = cx, z = cz, lo = Infinity;
     for (let k = 0; k < 8; k++) { const [x2, z2] = spot(), e = effH(hcell(x2, z2)) + rng() * R0 * .5; if (e < lo) { lo = e; x = x2; z = z2; } }
-    let y = skyY(); for (let k = 0; k < 6 && occupied(x, y, z, 1.2); k++) y += R0 * 2.5;
-    const i = addBall(x, y, z, 0, -rng() * Math.sqrt(g * H) * .3, 0); if (i >= 0 && guide) guided[i] = 1;
+    // a narrow mouth: every ball falls from the same height at the same speed, so none catch up and collide on the way in
+    let y = narrowMouth ? b.y1 + H * .5 + objSize * .25 : skyY(); for (let k = 0; k < 6 && occupied(x, y, z, 1.2); k++) y += R0 * 2.5;
+    const i = addBall(x, y, z, 0, narrowMouth ? 0 : -rng() * Math.sqrt(g * H) * .3, 0); if (i >= 0 && guide) guided[i] = 1;
     reserve(x, z, lo + 1.6 * R0, t + Math.sqrt(2 * Math.max(y - lo, 0) / g) + .3);
     return true;
   };
@@ -1429,7 +1433,9 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     for (let i = 0; i < n; i++) { if (!awake[i]) continue;
       const sp = Math.abs(vx[i]) + Math.abs(vy[i]) + Math.abs(vz[i]), tr = (sp + g * dt) * dt + 2.2 * R0, lo = py[i] - tr;
       if (!con[i] && lo > topAwake && lo > groundTop(px[i], pz[i]) && !(narrowMouth && !kicked[i] && lo < mouthY) && !(guided[i] && lo < mouthTop) && sample(px[i], py[i], pz[i]) > tr) {
-        free[i] = 1; vy[i] -= g * dt; px[i] += vx[i] * dt; py[i] += vy[i] * dt; pz[i] += vz[i] * dt; still[i] = 0;
+        free[i] = 1; vy[i] -= g * dt; py[i] += vy[i] * dt; still[i] = 0;
+        const nx2 = px[i] + vx[i] * dt, nz2 = pz[i] + vz[i] * dt;
+        if (guided[i] && !mouthOK(nx2, nz2)) vx[i] = vz[i] = 0; else { px[i] = nx2; pz[i] = nz2; }
         if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; dead++; }
         continue; }
       free[i] = 0; maxV = Math.max(maxV, sp); if (py[i] > top) top = py[i]; }
@@ -1454,7 +1460,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
             if (j === i || (awake[j] && j < i && !free[j])) continue;
             const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j], d2 = dx * dx + dy * dy + dz * dz;
             if (d2 >= rr2) continue;
-            if (awake[j] && guided[i] && guided[j] && py[i] > mouthTop && py[j] > mouthTop) continue;   // still dropping toward the mouth: they slip past each other instead of jamming it
+            if (guided[i] === 1 && guided[j] === 1 && awake[j]) continue;   // two on their way in through the mouth slip past each other (no wedging across the neck)
             if (d2 < 1e-12) { px[i] += (rng() - .5) * rr * .2; pz[i] += (rng() - .5) * rr * .2; continue; }   // exactly stacked: nudge apart
             const d = Math.sqrt(d2), pen = rr - d, nx0 = dx / d, ny0 = dy / d, nz0 = dz / d;
             if (awake[j]) { const hp = pen * .5;
@@ -1477,7 +1483,10 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
             if (L.in) { ux = -ux; uy = -uy; uz = -uz; }   // the centre got inside the leaf: back out through the nearest face
             px[i] = L.x + ux * R0; py[i] = L.y + uy * R0; pz[i] = L.z + uz * R0; con[i]++; cnx[i] += ux; cny[i] += uy; cnz[i] += uz; if (uy > .35) sup[i]++; } }
         if (py[i] < R0 && qy[i] >= R0 * .4 && hasGround(px[i], pz[i])) { py[i] = R0; con[i]++; sup[i] += 2; cny[i] += 1; flo[i] = 1; }
-        if (guided[i] && py[i] > b.y1 - R0 && py[i] < b.y1 + 1.5 * R0 && !mouthOK(px[i], pz[i]) && mouthOK(qx[i], qz[i])) { px[i] = qx[i]; pz[i] = qz[i]; con[i]++; }   // the funnel
+        if (guided[i] === 1 && py[i] < b.y1 - R0) guided[i] = 2;   // it's in
+        if (guided[i] && py[i] > b.y1 - R0 && (guided[i] === 1 || py[i] < mouthTop) && !mouthOK(px[i], pz[i])) {   // the funnel: on the way in it stays over the mouth
+          if (mouthOK(qx[i], qz[i])) { px[i] = qx[i]; pz[i] = qz[i]; } else if (guided[i] === 1) { px[i] += (cx - px[i]) * .2; pz[i] += (cz - pz[i]) * .2; }
+          vx[i] = vz[i] = 0; con[i]++; }
         if (closed && inside(px[i], pz[i], py[i]) !== !!inn[i]) {   // walls can't be crossed: keep whichever part of the move stays on its side (so it slides, never hangs)
           if (inside(qx[i], qz[i], py[i]) === !!inn[i]) { px[i] = qx[i]; pz[i] = qz[i]; }
           else if (inside(px[i], pz[i], qy[i]) === !!inn[i]) py[i] = qy[i];
@@ -1541,12 +1550,15 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     if (closed) { let end = plan(nbIn, inS, .1, tFor(nbIn), 'in');
       if (nbSp) end = plan(nbSp, exS, end + .2, (reduceMotion ? .5 : 1) * clamp(.5 + .5 * Math.log10(nbSp), .5, 2.2), 'spill');
       lastSpawnT = end; }
-    else { const nb = nbIn + nbSp; let d = tFor(nb); if (narrowMouth) d = Math.max(d, Math.min(nb * .055, 4));
+    else if (narrowMouth) {   // a narrow mouth takes the ones that fit at its own pace; the extra comes after
+      const end = plan(nbIn, inS, .1, Math.max(tFor(nbIn), Math.min(nbIn * .045, 3.4)), 'in');
+      lastSpawnT = nbSp ? plan(nbSp, exS, end + .1, (reduceMotion ? .5 : 1) * clamp(.4 + .4 * Math.log10(nbSp), .4, 1.4), 'spill') : end; }
+    else { const nb = nbIn + nbSp, d = tFor(nb);
       const end = plan(nbIn, inS, .1, d * nbIn / nb, 'in'); lastSpawnT = nbSp ? plan(nbSp, exS, end + d / nb, d * nbSp / nb, 'spill') : end; } }
   const drained = () => qi >= queue.length && !wait.length;
   const quiet = () => drained() && t - lastSpawnT > .5 && (!anyAwake() || t - lastSpawnT > 2.2);
   const markOut = heap => { let k = 0;   // spilled over (and when it was too many: heaped up above the brim)
-    for (let i = 0; i < n; i++) if (alive[i] && (!inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)) || (heap && !closed && py[i] > b.y1 + R0 * .4))) { out[i] = 1; k++; } return k; };
+    for (let i = 0; i < n; i++) if (alive[i] && (!inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)) || (!closed && py[i] > b.y1 + R0 * .4 && (heap || guided[i] === 1)))) { out[i] = 1; k++; } return k; };   // (a ball that never got in is a stray too)
   const bMax = () => guess > answer ? 2.6 : PHASE_MAX;
   const startB = () => { phase = 'B'; pt = 0;
     const need = Math.max(0, Math.round(Nfill - insideCount()));
