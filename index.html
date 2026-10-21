@@ -375,7 +375,7 @@ button.row:active{transform:scale(.98)}
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.8';
+window.SCOOPLE_BUILD = '2026-10-21.9';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1415,7 +1415,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   let doorOpen = false, doorT = 0;
   // too many: near full the door opens and the balls inside really pour out of it, while the pour keeps coming in at the same rate
   let holeLive = false, spilled = 0, spillGoal = 0;
-  const flowDir = new V3(); if (ov) { if (ov.down) flowDir.set(0, -1, 0); else { const dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1; flowDir.set(ov.dir[0] / dl, 0, ov.dir[1] / dl); } }
+  const flowDir = new V3(); if (ov && (ov.down || ov.dir)) { if (ov.down) flowDir.set(0, -1, 0); else { const dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1; flowDir.set(ov.dir[0] / dl, 0, ov.dir[1] / dl); } }
   const wakeIn = box => { for (let i = 0; i < n; i++) if (alive[i] && !awake[i] && box.containsPoint(_hp.set(px[i], py[i], pz[i]))) { awake[i] = 1; still[i] = 0; } };
   const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; leafOn = leaves.length > 0; hooks.doorOpened && hooks.doorOpened();
     if (sdfO) { sdf = sdfO; holeLive = true; holeBox.getCenter(holeC); for (let i = 0; i < n; i++) if (alive[i] && inn[i]) { awake[i] = 1; still[i] = 0; } } };
