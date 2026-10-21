@@ -61,6 +61,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 .chip{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 16px;border-radius:999px;background:var(--chip);
   border:1px solid var(--chip-border);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-weight:800;font-size:14px;letter-spacing:-.02em;transition:transform .1s,opacity .3s}
 .chip:active{transform:scale(.96)}
+.chip.on{background:var(--ink);color:#fff}
 .chip.sm{height:30px;padding:0 12px;font-size:12.5px}
 .spacer{flex:1}
 #bottom{position:relative;padding:0 14px 14px;display:flex;flex-direction:column;gap:10px}
@@ -201,7 +202,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 
   <div class="spacer"></div>
   <div id="bottom">
-    <div class="chiprow"><button class="chip" id="bResults">results</button><button class="chip" id="bReset">↺ reset view</button></div>
+    <div class="chiprow"><button class="chip" id="bResults">results</button><button class="chip" id="bDims" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 20L20 4M4 20v-5M4 20h5M20 4h-5M20 4v5"/></svg>size</button><button class="chip" id="bReset">↺ reset view</button></div>
     <div id="counter"><div class="cblk" id="cYour"><span>your scoops</span><b id="cnum">0</b></div><div class="cblk" id="cReal"><span>real scoops</span><b id="cnumReal">0</b></div></div>
     <div id="guessForm" class="off">
       <div id="gdisp" aria-live="polite"><span id="gval"></span><span id="gph">your guess</span></div>
@@ -353,7 +354,13 @@ function dailyObjects(date) {
   for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
   return arr.slice(0, Math.min(ROUNDS, arr.length));
 }
-const DAILY = dailyObjects(TODAY);
+/* Hand-picked lineups for specific dates (ids from OBJECTS). Any other day is shuffled from the date. */
+const DAILY_OVERRIDES = {
+  '2026-10-21': ['fishbowl', 'wheelbarrow', 'phonebooth', 'container', 'balloon'],
+};
+const DAILY = DAILY_OVERRIDES[TODAY] ? DAILY_OVERRIDES[TODAY].map(id => OBJECTS.find(o => o.id === id)).filter(Boolean) : dailyObjects(TODAY);
+if (DB.day.rounds.some((r, i) => r && (!DAILY[i] || r.id !== DAILY[i].id))) DB.day = { date: TODAY, rounds: [] };   // lineup changed: start the day fresh
+DB.day.ids = DAILY.map(o => o.id); save();
 
 /* ===================== scoring ===================== */
 const accuracy = (g, a) => Math.round(Math.min(g, a) / Math.max(g, a) * 100);
@@ -461,7 +468,7 @@ ground.material.onBeforeCompile = sh => {   // no shadow inside the floor hole, 
 const controls = new OrbitControls(cam, canvas);
 controls.enableDamping = true; controls.dampingFactor = .08; controls.enablePan = false;
 controls.rotateSpeed = .65; controls.zoomSpeed = .9;
-controls.minPolarAngle = .12; controls.maxPolarAngle = 1.46; controls.enabled = false;
+controls.minPolarAngle = .12; controls.maxPolarAngle = Math.PI / 2; controls.enabled = false;
 
 /* ===================== textures ===================== */
 function canvasTex(w, h, draw, repeat = true) {
@@ -1023,7 +1030,7 @@ function packer(mesh, dummy) { let n = 0; return {
    Settled balls freeze in place (they become static), which keeps the
    physics cheap: only moving balls are simulated.
    ===================================================================== */
-const MAX_BALLS = isMobile ? 2600 : 4000;   // visible balls per phase
+const MAX_BALLS = isMobile ? 10400 : 16000;   // visible balls per phase
 const PACKING = .6;                        // how tightly loose balls pack
 const PIT_COLOR = '#5b3626';
 
@@ -1101,13 +1108,13 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     quats[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rng() * 6.3, rng() * 6.3, rng() * 6.3));
     if (r > rMax) rMax = r; return i;
   };
-  const geo = MAX_BALLS <= 400 ? SCOOP_MID : isMobile ? SCOOP_LOW : SCOOP_LUMP;
+  const geo = MAX_BALLS <= 400 ? SCOOP_MID : (isMobile || MAX_BALLS > 12000) ? SCOOP_LOW : SCOOP_LUMP;
   const mesh = new THREE.InstancedMesh(geo, scoopMat, CAP); mesh.count = 0; mesh.frustumCulled = false;
   mesh.castShadow = !isMobile; mesh.receiveShadow = true; group.add(mesh);
   const dummy = new THREE.Object3D(), pack = packer(mesh, dummy);
 
   // spatial hash
-  const HB = 1 << 16, head = new Int32Array(HB), nxt = new Int32Array(CAP);
+  const HB = 1 << 17, head = new Int32Array(HB), nxt = new Int32Array(CAP);
   let cell = 1;
   const hk = (i, j, k) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & (HB - 1);
   const rebuildHash = () => { cell = rMax * 2; head.fill(-1);
@@ -1147,7 +1154,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const skyY = () => b.y1 + H * .5 + objSize * .25 + rng() * objSize * .1;
   const spot = () => { for (let k = 0; k < 40; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (inside(x, z, b.y1 - 1e-3)) return [x, z]; } return [cx, cz]; };
   let doorOpen = false, doorT = 0;
-  const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; ov.holeOpen = true; buildSDF(); hooks.doorOpened && hooks.doorOpened(); };
+  const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; hooks.doorOpened && hooks.doorOpened(); }; // walls stay sealed: only new spill comes out
   const emitOut = r => { // out of the door / burst point
     openDoor(); const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1, dx = ov.dir[0] / dl, dz = ov.dir[1] / dl, w = ov.w || .4, h = ov.h || .4;
     const s = (rng() - .5) * w, v = Math.sqrt(g * H) * (.5 + rng() * .35);
@@ -1343,6 +1350,7 @@ scene.add(blob);
 
 function disposeRound() {
   if (!R) return;
+  { const on = dimsOn; dimsOn = false; buildDims(); dimsOn = on; }
   scene.remove(R.model.group); if (R.pour) { scene.remove(R.pour.group); R.pour.dispose(); } groundU.uHR.value = 0;
   const kill = o => o.traverse(n => { if (n.geometry && !n.geometry.userData.keep) n.geometry.dispose(); if (n.isInstancedMesh) n.dispose(); if (n.userData.ownMat) n.material.dispose(); });
   kill(R.model.group);
@@ -1378,6 +1386,7 @@ function setupRound(idx) {
   controls.minDistance = sphere.radius * .35; controls.maxDistance = view.dist * 2.2; controls.target.copy(target); controls.enableZoom = true;
   const rng = mulberry32(xmur3(TODAY + obj.id)());
   R = { idx, obj, answer, model, size, center, box, objSize, view, rng, sPos, fill: null, line: null, guess: null, minD: sphere.radius * .35, scoopZoom: false };
+  buildDims();
   return R;
 }
 
@@ -1419,6 +1428,45 @@ addEventListener('keydown', e => {   // a physical keyboard works too
   else if (e.key === 'Enter') { e.preventDefault(); submitGuess(); } else return;
 });
 const freeState = () => state === 'guess' || state === 'result' || state === 'done';
+function showChips(on) { ui.reset.classList.toggle('show', on); $('bDims').classList.toggle('show', on); }
+/* Size guides: three dimension lines (width, height, length of the space being filled), meeting at one corner */
+let dimsOn = false;
+function unitLabel(m) { return m < 1 ? `${Math.round(m * 100)} cm` : m < 10 ? `${m.toFixed(1)} m` : `${Math.round(m)} m`; }
+function labelSprite(text, px) {
+  const c = document.createElement('canvas'), g = c.getContext('2d'), f = `900 ${px * 2}px ${getComputedStyle(document.body).fontFamily}`;
+  g.font = f; const w = Math.ceil(g.measureText(text).width) + px * 2.4, h = px * 3.2; c.width = w; c.height = h;
+  g.font = f; g.fillStyle = 'rgba(29,26,25,.78)'; g.beginPath(); g.roundRect(0, 0, w, h, h / 2); g.fill();
+  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + px * .1);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, sizeAttenuation: false, depthTest: true, depthWrite: false, transparent: true }));
+  sp.scale.set(.027 * w / h, .027, 1); sp.renderOrder = 6; return sp;
+}
+function buildDims() {
+  if (R.dims) { scene.remove(R.dims); R.dims.traverse(n => { if (n.geometry && !n.geometry.userData.keep) n.geometry.dispose(); if (n.material) { n.material.map && n.material.map.dispose(); n.material.dispose(); } }); R.dims = null; }
+  if (!dimsOn) return;
+  const b = R.model.fill.bounds, box = R.box, o = R.objSize * .06, rr = Math.max(R.objSize * .0028, .0015);
+  const az = R.view.az, fx = Math.sin(az), fz = Math.cos(az), rx = Math.cos(az), rz = -Math.sin(az);
+  let best = null; for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const sc = sx * fx + sz * fz - (sx * rx + sz * rz); if (!best || sc > best[2]) best = [sx, sz, sc]; }
+  const [sx, sz] = best;   // the front-left corner, as seen from the starting view
+  const xC = (sx > 0 ? box.max.x : box.min.x) + sx * o, zC = (sz > 0 ? box.max.z : box.min.z) + sz * o, y0 = b.y0, y1 = b.y1;
+  const grp = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: 0x1d1a19, transparent: true, opacity: .5, depthWrite: false }), faint = mat.clone(); faint.opacity = .22;
+  const seg = (a, c, m, r = rr) => { const d = new V3().subVectors(c, a), msh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 8), m);
+    msh.position.copy(a).add(c).multiplyScalar(.5); msh.scale.y = Math.max(d.length(), 1e-6); msh.quaternion.setFromUnitVectors(_up, d.normalize()); msh.renderOrder = 5; grp.add(msh); };
+  const tick = (p, axis) => { const t = rr * 7, a = p.clone(), c = p.clone(); a[axis] -= t; c[axis] += t; seg(a, c, mat); };
+  const lines = [   // [from, to, tick axis, length]
+    [new V3(b.minX, y0, zC), new V3(b.maxX, y0, zC), 'y', b.maxX - b.minX],
+    [new V3(xC, y0, b.minZ), new V3(xC, y0, b.maxZ), 'y', b.maxZ - b.minZ],
+    [new V3(xC, y0, zC), new V3(xC, y1, zC), 'x', y1 - y0],
+  ];
+  for (const [a, c, ax, len] of lines) {
+    seg(a, c, mat); tick(a, ax); tick(c, ax);
+    const lab = labelSprite(unitLabel(len), 22); lab.position.copy(a).add(c).multiplyScalar(.5); grp.add(lab);
+  }
+  seg(new V3(sx > 0 ? b.maxX : b.minX, y0, zC), new V3(xC, y0, zC), faint, rr * .7);   // dotted-in extensions to the shared corner
+  seg(new V3(xC, y0, sz > 0 ? b.maxZ : b.minZ), new V3(xC, y0, zC), faint, rr * .7);
+  scene.add(grp); R.dims = grp;
+}
+$('bDims').addEventListener('click', () => { dimsOn = !dimsOn; $('bDims').classList.toggle('on', dimsOn); $('bDims').setAttribute('aria-pressed', dimsOn); if (R) buildDims(); });
 function setOrbitLimits(zoomed) {
   controls.minDistance = zoomed ? SCOOP_R * 3 : R.minD; controls.maxDistance = R.view.dist * 2.2;
   controls.target.copy(zoomed ? heroScoop.position : R.view.target);
@@ -1454,11 +1502,11 @@ function startRound(idx) {
   setQuestion(R.obj); renderProgress(idx);
   ui.qwrap.classList.remove('away'); hideCard();
   ui.form.className = 'off'; setDigits('');
-  ui.counter.className = ''; ui.reset.classList.remove('show'); ui.results.classList.remove('show');
+  ui.counter.className = ''; showChips(false); ui.results.classList.remove('show');
   controls.enabled = false;
   Object.assign(camS, introView(), { target: introView().target }); applyCam();
   tweenCam(R.view, INTRO_DUR, { exp: true, intro: true, ease: t => easeInOutCubic(smooth(0, 1, t * 1.08 - .04)), done: () => {
-    state = 'guess'; unlockCam(); ui.form.className = ''; setDigits(guessDigits); ui.reset.classList.add('show');
+    state = 'guess'; unlockCam(); ui.form.className = ''; setDigits(guessDigits); showChips(true);
   } });
 }
 
@@ -1472,7 +1520,7 @@ function submitGuess() {
   save();
   state = 'fill'; lockCam(); camTween = null;
   if (R.scoopZoom) { R.scoopZoom = false; setOrbitLimits(false); }
-  ui.form.className = 'gone'; ui.reset.classList.remove('show'); ui.qwrap.classList.add('away');
+  ui.form.className = 'gone'; showChips(false); ui.qwrap.classList.add('away');
   ui.cnum.textContent = '0'; ui.cnumReal.textContent = fmt(R.answer); ui.counter.className = 'show';
   beginFill(false);
 }
@@ -1519,7 +1567,7 @@ function finishFill() {
   R.pouring = false; state = 'result';
   controls.enableZoom = true; controls.minDistance = R.minD;
   controls.maxDistance = Math.max(R.view.dist * 2.2, cam.position.distanceTo(controls.target) * 1.4);
-  ui.reset.classList.add('show');
+  showChips(true);
   showCard();
   if (R.acc >= 95) { confetti(); }
 }
@@ -1661,6 +1709,10 @@ function frame(now) {
   if (controls.enabled) controls.update();
   const d = cam.position.distanceTo(controls.enabled ? controls.target : camS.target);
   frameShift(dt);
+  if (R && R.scoopZoom && controls.enabled) {   // near the scoop, allow looking up from just above the floor
+    const ty = controls.target.y, dd = cam.position.distanceTo(controls.target);
+    controls.maxPolarAngle = Math.acos(clamp((SCOOP_R * .15 - ty) / Math.max(dd, 1e-6), -1, 1));
+  } else controls.maxPolarAngle = Math.PI / 2;
   if (R && R.pour) { const P = R.pour; groundU.uHR.value = P.hole || 0; groundU.uHC.value.set(...P.holeC); groundU.uIsl.value.set(...P.isl); groundU.uIslE.value = P.islE; }
   cam.near = Math.max(.002, d * .01); cam.far = d * 6 + (R ? R.objSize * 4 : 100); cam.updateProjectionMatrix();
   updateFill(dt);
@@ -1678,7 +1730,7 @@ function boot() {
     R.guess = r.guess; R.acc = r.acc; beginFill(true);
     Object.assign(camS, R.view); camS.target = R.view.target.clone();
     applyCam(); unlockCam();
-    state = 'done'; ui.form.className = 'gone'; ui.qwrap.classList.add('away'); ui.reset.classList.add('show'); ui.results.classList.add('show');
+    state = 'done'; ui.form.className = 'gone'; ui.qwrap.classList.add('away'); showChips(true); ui.results.classList.add('show');
     openEnd(); return;
   }
   const go = () => startRound(done);
