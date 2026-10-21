@@ -358,6 +358,20 @@ button.row:active{transform:scale(.98)}
 <div id="toast"></div>
 <div id="err">This game needs WebGL. Try a newer browser.</div>
 
+<script>
+/* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
+   since GitHub Pages lets browsers keep a cached copy for a while. */
+window.SCOOPLE_BUILD = '2026-10-21.2';
+(function () {
+  try {
+    if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
+    fetch(location.pathname + '?fresh=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => {
+      const m = t.match(/SCOOPLE_BUILD = '([^']+)'/);
+      if (m && m[1] !== window.SCOOPLE_BUILD) { sessionStorage.setItem('scoople:reloaded', m[1]); location.replace(location.pathname + '?v=' + encodeURIComponent(m[1])); }
+    }).catch(() => {});
+  } catch (e) {}
+})();
+</script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -1344,6 +1358,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         let dx = vx[i] * h, dy = vy[i] * h, dz = vz[i] * h; const m = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
         if (m > maxStep) { const f = maxStep / m; dx *= f; dy *= f; dz *= f; }
         px[i] += dx; py[i] += dy; pz[i] += dz; sup[i] = 0; con[i] = 0; cnx[i] = cny[i] = cnz[i] = 0;
+        if (narrowMouth && py[i] > mouthY && py[i] < b.y1 + rad[i] * 2 && still[i] > .08) {   // perched on the rim: ease it in toward the middle
+          const ex = cx - px[i], ez = cz - pz[i], el = Math.hypot(ex, ez) || 1, push = Math.sqrt(g * rad[i]) * .6 * h; vx[i] += ex / el * push / h * h; vz[i] += ez / el * push / h * h; px[i] += ex / el * push * h; pz[i] += ez / el * push * h; }
         if (narrowMouth && !kicked[i] && py[i] < mouthY) { kicked[i] = 1; const a = rng() * 6.283, v = Math.sqrt(g * H) * (.15 + rng() * .3); vx[i] += Math.cos(a) * v; vz[i] += Math.sin(a) * v; } }
       // ball-ball contacts (sleeping balls act as fixed)
       for (let i = 0; i < n; i++) { if (!awake[i]) continue;
