@@ -373,7 +373,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.15';
+window.SCOOPLE_BUILD = '2026-10-21.16';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1704,8 +1704,9 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         if (guess !== answer) hooks.correctionStart && hooks.correctionStart();
         if (!isFull()) startB(); else afterB(); } }
     else if (phase === 'B') {
-      if (drained() && t - lastSpawnT > .9 && pt < bMax() - 2.4 && !isFull()) {   // still not full: top it up
-        const k = Math.max(2, Math.round(Nfill * .03)); lastSpawnT = plan(k, 0, t + .05, .3, 'in'); }
+      if (drained() && t - lastSpawnT > .7 && pt < bMax() - 2.0 && !isFull()) {   // still not full: top it up, as much as the space left
+        let room = 0; if (closed) { for (const c of cells) if (ceilC[c] - hmap[c] >= roomH) room++; } else room = (1 - fullFrac()) * cells.length;
+        const k = Math.max(2, Math.round(Math.max(Nfill * .03, room / cells.length * Nfill * .5))); lastSpawnT = plan(k, 0, t + .05, .3, 'in'); }
       if ((drained() && t - lastSpawnT > .5 && (isFull() || pt > bMax() - 2.4) && (!anyAwake() || t - lastSpawnT > 1.6)) || pt > bMax() - .3) {
         queue.length = qi; wait.length = 0; afterB(); } }
     else if (phase === 'cut') {
