@@ -373,7 +373,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-21.17';
+window.SCOOPLE_BUILD = '2026-10-21.18';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1366,6 +1366,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     if (closed) { let k = 0; for (const c of cells) if (ceilC[c] - hmap[c] >= roomH) k++; return k <= cells.length * .03; }   // (a few corners nothing can reach)
     return fullFrac() >= .75; };
   const fullFrac = () => { let k = 0; for (const c of cells) if (hmap[c] >= b.y1 - R0 * 1.5) k++; return k / cells.length; };
+  const spaceLeft = () => { if (!closed) return 1 - fullFrac(); let room = 0; for (const c of cells) if (ceilC[c] - hmap[c] >= roomH) room++; return room / cells.length; };   // (rough share of the object still empty)
   const insideCount = () => { let k = 0; for (let i = 0; i < n; i++) if (alive[i] && !out[i] && inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3))) k++; return k; };
 
   // how much narrower the mouth is than the widest part (fishbowl ≈ .3, tub ≈ 1)
@@ -1670,7 +1671,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     for (let i = 0; i < n; i++) if (alive[i] && (!inside(px[i], pz[i], Math.min(py[i], b.y1 - 1e-3)) || (!closed && py[i] > b.y1 + R0 * .15 && (heap || guided[i] === 1)))) { out[i] = 1; k++; } return k; };   // (a ball that never got in is a stray too)
   const bMax = () => guess > answer ? (closed ? 4 : 3.4) : PHASE_MAX;
   const startB = () => { phase = 'B'; pt = 0;
-    const need = Math.max(0, Math.round(Nfill - insideCount()));
+    if (sdfO) { hmap.fill(b.y0); for (let i = 0; i < n; i++) if (alive[i] && inn[i]) settle(i); }
+    const need = Math.max(0, Math.round(Math.max(Nfill - insideCount(), spaceLeft() * Nfill * .55)));
     let d = tFor(need); if (narrowMouth) d = Math.max(d, Math.min(need * .04, 2.8));
     lastSpawnT = need ? plan(need, 0, t + .3, d, 'in') : t; };
   const afterB = () => { const k = markOut(guess > answer); pt = 0;
@@ -1705,9 +1707,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         if (!isFull()) startB(); else afterB(); } }
     else if (phase === 'B') {
       if (sdfO && (remeasureT -= dt) <= 0) { remeasureT = .5; hmap.fill(b.y0); for (let i = 0; i < n; i++) if (alive[i] && inn[i] && !awake[i]) settle(i); }   // (after a spill the old pile heights are stale)
-      if (drained() && t - lastSpawnT > .7 && pt < bMax() - 2.0 && !isFull()) {   // still not full: top it up, as much as the space left
-        let room = 0; if (closed) { for (const c of cells) if (ceilC[c] - hmap[c] >= roomH) room++; } else room = (1 - fullFrac()) * cells.length;
-        const k = Math.max(2, Math.round(Math.max(Nfill * .03, room / cells.length * Nfill * .5))); lastSpawnT = plan(k, 0, t + .05, .3, 'in'); }
+      if (drained() && t - lastSpawnT > .5 && pt < bMax() - 1.7 && !isFull()) {   // still not full: top it up, as much as the space left
+        const k = Math.max(2, Math.round(Math.max(Nfill * .03, spaceLeft() * Nfill * .5))); lastSpawnT = plan(k, 0, t + .05, .3, 'in'); }
       if ((drained() && t - lastSpawnT > .5 && (isFull() || pt > bMax() - 2.4) && (!anyAwake() || t - lastSpawnT > 1.6)) || pt > bMax() - .3) {
         queue.length = qi; wait.length = 0; afterB(); } }
     else if (phase === 'cut') {
