@@ -169,34 +169,38 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:15}
 /* ---------- home ---------- */
-#home{position:fixed;inset:0;z-index:12;background:var(--bg);overflow-y:auto;overflow-x:hidden;transition:opacity .35s,transform .35s;-webkit-overflow-scrolling:touch}
+/* fits one screen: the hero takes whatever height is left after the cards */
+#home{position:fixed;inset:0;z-index:12;background:var(--bg);overflow:hidden;transition:opacity .35s,transform .35s;
+  padding:0 0 env(safe-area-inset-bottom)}
 #home.hidden{opacity:0;transform:scale(1.02);pointer-events:none}
-.home-col{width:min(480px,100%);margin:0 auto;padding:0 0 calc(24px + env(safe-area-inset-bottom))}
-.hero{position:relative;height:34vh;min-height:220px;max-height:340px;overflow:hidden;border-radius:0 0 28px 28px;background:#efcfb8}
-.hero video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(247,220,200,.85) 0%,rgba(247,220,200,0) 34%,rgba(247,220,200,0) 78%,rgba(247,220,200,.55) 100%);pointer-events:none}
-.hero-name{position:absolute;z-index:1;left:18px;top:calc(env(safe-area-inset-top) + 10px);font-weight:900;font-size:44px;letter-spacing:-.065em;line-height:1}
-.home-body{padding:16px 16px 0}
-.home-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
-.home-date{font-weight:800;font-size:16px;color:#6f625c;letter-spacing:-.02em}
+.home-col{width:min(480px,100%);height:100%;margin:0 auto;display:flex;flex-direction:column;padding-bottom:10px}
+.hero{position:relative;flex:1 1 0;min-height:120px;overflow:hidden}
+.hero video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 60%;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 16%,#000 62%,transparent 100%),linear-gradient(90deg,transparent 0%,#000 10%,#000 90%,transparent 100%);
+  -webkit-mask-composite:source-in;mask-image:linear-gradient(180deg,transparent 0%,#000 16%,#000 62%,transparent 100%),linear-gradient(90deg,transparent 0%,#000 10%,#000 90%,transparent 100%);mask-composite:intersect}
+.hero-name{position:absolute;z-index:1;left:18px;top:calc(env(safe-area-inset-top) + 8px);font-weight:900;font-size:42px;letter-spacing:-.065em;line-height:1}
+.home-body{flex:none;padding:0 14px}
+.home-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.home-date{font-weight:800;font-size:15px;color:#6f625c;letter-spacing:-.02em}
 .home-icons{display:flex;gap:8px}
-.rbtn{width:46px;height:46px;border-radius:50%;background:var(--card);display:grid;place-items:center;box-shadow:0 2px 0 rgba(29,26,25,.05)}
-.rbtn svg{width:22px;height:22px}
-.hcard{background:var(--card);border-radius:24px;padding:16px 16px 16px;margin-bottom:10px;box-shadow:0 2px 0 rgba(29,26,25,.04)}
-.eyebrow{font-weight:800;font-size:12.5px;letter-spacing:.14em;color:#8a7c75;text-transform:uppercase}
-.today-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px}
-.today-row b{font-weight:900;font-size:26px;letter-spacing:-.05em}
+.rbtn{width:44px;height:44px;border-radius:50%;background:var(--card);display:grid;place-items:center;box-shadow:0 2px 0 rgba(29,26,25,.05)}
+.rbtn svg{width:21px;height:21px}
+.hcard{background:var(--card);border-radius:22px;padding:13px 14px;margin-bottom:8px;box-shadow:0 2px 0 rgba(29,26,25,.04)}
+.eyebrow{font-weight:800;font-size:12px;letter-spacing:.14em;color:#8a7c75;text-transform:uppercase}
+.today-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:1px}
+.today-row b{font-weight:900;font-size:24px;letter-spacing:-.05em}
 .dots{display:flex;gap:6px}
-.dots i{width:14px;height:14px;border-radius:50%;border:2.5px solid #4b413c;box-sizing:border-box}
+.dots i{width:13px;height:13px;border-radius:50%;border:2.5px solid #4b413c;box-sizing:border-box}
 .dots i.good{background:var(--t-good);border-color:var(--t-good)} .dots i.mid{background:var(--t-mid);border-color:var(--t-mid)} .dots i.low{background:var(--t-low);border-color:var(--t-low)}
-.hsub{font-weight:700;font-size:14.5px;color:#7a6d66;margin:6px 0 14px}
-.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
-.tile{display:flex;align-items:center;gap:7px;min-height:60px;padding:10px 9px;border-radius:18px;background:rgba(247,220,200,.35);font-weight:900;font-size:14px;letter-spacing:-.03em;text-align:left;line-height:1.1}
-.tile .ic{font-size:22px;flex:none}
+.hsub{font-weight:700;font-size:14px;color:#7a6d66;margin:3px 0 11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hPlay{height:52px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px}
+.tile{display:flex;align-items:center;gap:7px;min-height:50px;padding:8px 9px;border-radius:16px;background:rgba(247,220,200,.35);font-weight:900;font-size:14px;letter-spacing:-.03em;text-align:left;line-height:1.1}
+.tile .ic{font-size:21px;flex:none}
 .tile small{display:block;font-weight:800;font-size:11px;color:#9a8a82;letter-spacing:0;margin-top:2px}
 .tile[disabled]{opacity:.55;cursor:default}
-.tiles2{display:grid;grid-template-columns:1.25fr 1fr .8fr;gap:8px}
-.tiles2 .tile{background:var(--card);min-height:68px;box-shadow:0 2px 0 rgba(29,26,25,.04)}
+.tiles2{display:grid;grid-template-columns:1.25fr 1fr .8fr;gap:7px}
+.tiles2 .tile{background:var(--card);min-height:54px;box-shadow:0 2px 0 rgba(29,26,25,.04)}
 #app .word{cursor:pointer;pointer-events:auto}
 #err{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:30px;font-weight:800}
 @media (prefers-reduced-motion: reduce){
@@ -319,13 +323,13 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
       <div class="hcard">
         <div class="eyebrow">Today</div>
         <div class="today-row"><b>Five objects</b><div class="dots" id="hDots"><i></i><i></i><i></i><i></i><i></i></div></div>
-        <div class="hsub" id="hSub">Guess how many scoops fill each one · about 3 min</div>
+        <div class="hsub" id="hSub">Guess how many scoops fill each · about 3 min</div>
         <button class="pill wide" id="hPlay">Play today</button>
       </div>
       <div class="hcard">
         <div class="eyebrow">More ways to play</div>
         <div class="tiles">
-          <button class="tile" id="hHow"><span class="ic">📖</span><span>How to play<small>rules</small></span></button>
+          <button class="tile" id="hHow"><span class="ic">📖</span><span>How to&nbsp;play<small>rules</small></span></button>
           <button class="tile" disabled><span class="ic">🎲</span><span>Practice<small>soon</small></span></button>
           <button class="tile" disabled><span class="ic">🏆</span><span>Gauntlet<small>soon</small></span></button>
         </div>
@@ -1905,7 +1909,7 @@ function renderHome() {
   const rs = DB.day.rounds, n = rs.filter(Boolean).length, all = DAILY.length;
   [...$('hDots').children].forEach((el, i) => { el.className = rs[i] ? tier(rs[i].acc) : ''; });
   $('hPlay').textContent = n >= all ? 'See results' : n ? `Continue · ${n} of ${all} done` : 'Play today';
-  $('hSub').textContent = n >= all ? `You scored ${dayTotal()}/500 · a new scoople comes out tomorrow` : 'Guess how many scoops fill each one · about 3 min';
+  $('hSub').textContent = n >= all ? `You scored ${dayTotal()}/500 · a new scoople comes out tomorrow` : 'Guess how many scoops fill each · about 3 min';
   $('hCollN').textContent = `${Object.keys(DB.seen || {}).length}/${OBJECTS.length}`;
   $('hStreakN').textContent = curStreak();
 }
