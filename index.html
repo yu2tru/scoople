@@ -34,6 +34,9 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   background:var(--ink);color:#fff;padding:5px 10px;border-radius:999px;white-space:nowrap;opacity:0;transition:opacity .3s;will-change:transform}
 .tag.show{opacity:1}
 #scoopTag{transition:none}
+#dimtags{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.dimtag{position:absolute;left:0;top:0;font-weight:900;font-size:13px;letter-spacing:-.02em;color:#fff;background:rgba(29,26,25,.55);
+  padding:4px 9px;border-radius:999px;white-space:nowrap;opacity:0;will-change:transform,opacity}
 #scoopTag.click{pointer-events:auto;cursor:pointer}
 #scoopTag.click::after{content:"";position:absolute;inset:-10px -8px}
 
@@ -66,18 +69,23 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 .spacer{flex:1}
 #bottom{position:relative;padding:0 14px 14px;display:flex;flex-direction:column;gap:10px}
 .chiprow{position:absolute;right:14px;bottom:100%;margin-bottom:8px;display:flex;justify-content:flex-end;gap:8px}
+/* while guessing, the size / reset buttons stand in a column beside the keypad */
+#bottom:has(#guessForm:not(.gone)) .chiprow{top:52px;bottom:auto;margin:0;flex-direction:column;width:96px;gap:5px}
+#bottom:has(#guessForm:not(.gone)) .chiprow .chip:not(.show){display:none}
+#bottom:has(#guessForm:not(.gone)) .chiprow .chip{height:40px;justify-content:center;padding:0 8px;font-size:13px;border-radius:14px}
+#bottom:has(#guessForm:not(.gone)) #pad{margin-right:101px}
 .chiprow .chip{opacity:0;pointer-events:none}
 .chiprow .chip.show{opacity:1;pointer-events:auto}
 #guessForm{display:flex;flex-direction:column;gap:6px;transition:opacity .35s, transform .35s}
 #guessForm.off{opacity:.45}
 #guessForm.gone{display:none}
 #guessForm.gone *{pointer-events:none!important}
-#gdisp{height:50px;border-radius:999px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 rgba(29,26,25,.07);overflow:hidden}
+#gdisp{height:46px;border-radius:999px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 rgba(29,26,25,.07);overflow:hidden}
 #gval{font-weight:900;font-size:clamp(24px,7vw,30px);letter-spacing:-.04em;font-variant-numeric:tabular-nums;white-space:nowrap}
 #gph{font-weight:800;font-size:22px;color:#c9bab2;letter-spacing:-.03em}
 #gval:not(:empty)+#gph{display:none}
 #pad{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
-#pad button{height:44px;border-radius:16px;background:rgba(255,255,255,.62);border:1px solid var(--chip-border);
+#pad button{height:40px;border-radius:16px;background:rgba(255,255,255,.62);border:1px solid var(--chip-border);
   font-weight:900;font-size:24px;letter-spacing:-.02em;display:grid;place-items:center;touch-action:manipulation;transition:transform .08s,background .12s}
 #pad button:active{transform:scale(.94);background:#fff}
 #pad .del svg{width:26px;height:26px}
@@ -176,6 +184,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 <body>
 <canvas id="c" aria-label="3D scene"></canvas>
 <svg id="lines"><line id="scoopLine" stroke="#1d1a19" stroke-width="1.5" stroke-linecap="round" opacity="0"/><circle id="scoopDot" r="3" fill="#1d1a19" opacity="0"/></svg>
+<div id="dimtags"></div>
 <div id="scoopTag" class="tag" role="button" aria-label="Zoom in on the scoop">1 scoop</div>
 
 <div id="app">
@@ -1154,7 +1163,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const setHole = r => { holeR = r; occl.material.uniforms.uR.value = r; pit.scale.set(r, 1, r); pitFloor.scale.set(r, 1, r); };
 
   // ---- spawning ----
-  const queue = []; let qi = 0;
+  const queue = [], retry = []; let qi = 0, retryT = 0;
   const skyY = () => b.y1 + H * .5 + objSize * .25 + rng() * objSize * .1;
   const spot = () => { for (let k = 0; k < 40; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (inside(x, z, b.y1 - 1e-3)) return [x, z]; } return [cx, cz]; };
   let doorOpen = false, doorT = 0;
@@ -1163,7 +1172,10 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     openDoor(); const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1, dx = ov.dir[0] / dl, dz = ov.dir[1] / dl, w = ov.w || .4, h = ov.h || .4;
     const s = (rng() - .5) * w, v = Math.sqrt(g * H) * (.5 + rng() * .35);
     if (ov.down) { addBall(at.x + (rng() - .5) * w, at.y - r * 1.2, at.z + (rng() - .5) * w, r, (rng() - .5) * v * .3, -v * .2, (rng() - .5) * v * .3); return; }
-    addBall(at.x - dz * s + dx * r * 1.3, at.y + r + rng() * h, at.z + dx * s + dz * r * 1.3, r, dx * v + (rng() - .5) * v * .3, v * .25, dz * v + (rng() - .5) * v * .3);
+    // start just clear of the outside of the wall, so nothing gets shoved back into the full interior
+    let x = at.x - dz * s, y = at.y + r + rng() * h, z = at.z + dx * s, d = 0;
+    while (sample(x + dx * d, y, z + dz * d) < r * 1.1 && d < objSize * .5) d += vs * .35;
+    addBall(x + dx * d, y, z + dz * d, r, dx * v + (rng() - .5) * v * .3, v * .25, dz * v + (rng() - .5) * v * .3);
   };
   // closed objects: a coarse height map of the settled pile, so each ball drops into the lowest open spot
   const HG = 40, hgx = (b.maxX - b.minX) / HG || 1, hgz = (b.maxZ - b.minZ) / HG || 1, hmap = new Float32Array(HG * HG).fill(b.y0);
@@ -1183,7 +1195,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       }
       const full = q.over && pouredA >= answer;          // only spill once the real capacity has been poured in
       if (best && (!full || !occupied(best[0], best[1], best[2], r))) { addBall(best[0], best[1], best[2], r, 0, -Math.sqrt(g * r), 0); return; }
-      if (!full) { const [x, z] = spot(); const c = ceilAt(x, z); if (c > 0) { addBall(x, c - r * 1.05, z, r, 0, -Math.sqrt(g * r), 0); return; } }
+      if (!full) { q.tries = (q.tries || 0) + 1; if (q.tries < 8) { retry.push(q); return; } }   // no room yet: wait for the pile to settle, then try again
       if (q.over && ov && ov.hole) emitOut(r);   // corrections never spill: a full car just stops taking more
     } else { let x, z, y = skyY(); for (let k = 0; k < 6; k++) { [x, z] = spot(); if (!occupied(x, y, z, r * 1.2)) break; y += r * 2.5; }
       addBall(x, y, z, r, 0, -rng() * Math.sqrt(g * H) * .3, 0); }
@@ -1235,7 +1247,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       // velocities, friction, sleeping
       for (let i = 0; i < n; i++) { if (!awake[i]) continue;
         vx[i] = (px[i] - qx[i]) / h; vy[i] = (py[i] - qy[i]) / h; vz[i] = (pz[i] - qz[i]) / h;
-        { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = pm[i] + .3 * Math.sqrt(g * rad[i]);  // pushes never add energy
+        { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = Math.max(pm[i], .15 * Math.sqrt(g * rad[i]));  // pushes never add energy (no creeping speed-up in a crowd)
           if (sp > cap) { const f = cap / sp; vx[i] *= f; vy[i] *= f; vz[i] *= f; } }
         if (con[i]) { vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= damp; }
         if (sup[i]) { vx[i] *= sdamp; vy[i] *= sdamp; vz[i] *= sdamp;
@@ -1260,11 +1272,12 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   let pouredA = 0, t = 0, phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0;
   const startA = () => { const s = schedule(guess, .15, true); lastSpawnT = .15 + s.dur; };
   startA();
-  const settled = () => qi >= queue.length && (!anyAwake() || t - lastSpawnT > 2.6) && t - lastSpawnT > .5;
+  const settled = () => qi >= queue.length && !retry.length && (!anyAwake() || t - lastSpawnT > 2.6) && t - lastSpawnT > .5;
   P.update = dt => {
     dt = Math.min(dt, 1 / 30); t += dt; pt += dt; plopBudget = Math.min(plopBudget + dt * 22, 3);
     if (n === 0 || qi < queue.length) rebuildHash();
     while (qi < queue.length && queue[qi].t <= t) { const q = queue[qi++]; spawn(q); if (phase === 'A') { P.count += q.scoops; pouredA += q.scoops; } }
+    retryT -= dt; if (retry.length && retryT <= 0) { retryT = .12; for (const q of retry.splice(0, 40)) spawn(q); }
     if (doorOpen && doorT < 1) { doorT = Math.min(1, doorT + dt / .45); ov.open && ov.open(easeInOutSine(doorT)); }
     if (anyAwake()) step(dt);
     if (phase === 'A' && settled()) { pt = 0;
@@ -1372,7 +1385,13 @@ function setupRound(idx) {
   // boxes of every visible part (used to keep the size lines clear) and the parts that touch the ground
   g.updateMatrixWorld(true);
   const meshBoxes = [], contacts = [], thr = objSize * .012 + .002;
-  g.traverseVisible(n => { if (!n.isMesh) return; const bx = new THREE.Box3().setFromObject(n); if (bx.isEmpty()) return; meshBoxes.push(bx);
+  const im4 = new THREE.Matrix4();
+  g.traverseVisible(n => { if (!n.isMesh) return;
+    if (n.isInstancedMesh) {   // one box per instance, so e.g. a row of flags doesn't count as one big slab
+      if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
+      for (let i = 0; i < n.count; i++) { n.getMatrixAt(i, im4); im4.premultiply(n.matrixWorld); const ib = n.geometry.boundingBox.clone().applyMatrix4(im4); if (!ib.isEmpty()) meshBoxes.push(ib); }
+    }
+    const bx = new THREE.Box3().setFromObject(n); if (bx.isEmpty()) return; if (!n.isInstancedMesh) meshBoxes.push(bx);
     if (bx.min.y <= thr) contacts.push([bx.min.x - objSize * .01, bx.min.z - objSize * .01, bx.max.x + objSize * .01, bx.max.z + objSize * .01]); });
   while (contacts.length > 16) {   // merge the closest pair until it fits the floor shader
     let bi = 0, bj = 1, bc = Infinity;
@@ -1445,66 +1464,70 @@ addEventListener('keydown', e => {   // a physical keyboard works too
 });
 const freeState = () => state === 'guess' || state === 'result' || state === 'done';
 function showChips(on) { ui.reset.classList.toggle('show', on); $('bDims').classList.toggle('show', on); }
-/* Size guides: three dimension lines (length, width, height of the space being filled) that grow out of one shared corner */
+/* Size guides: three dimension lines (length, width, height of the space being filled).
+   They float just outside the object and point at one shared origin, each line ending the same distance from it.
+   Labels are page elements: always crisp, never sliced by walls or the floor, and hidden when the object covers their spot. */
 let dimsOn = false;
-const floorClip = [new THREE.Plane(new V3(0, 1, 0), 0)];   // nothing pokes through the floor
+const floorClip = [new THREE.Plane(new V3(0, 1, 0), 0)];
 function unitLabel(m) { return m < 1 ? `${Math.round(m * 100)} cm` : m < 10 ? `${m.toFixed(1)} m` : `${Math.round(m)} m`; }
-function labelSprite(text) {
-  const px = 44, c = document.createElement('canvas'), g = c.getContext('2d'), f = `900 ${px}px ${getComputedStyle(document.body).fontFamily}`;
-  g.font = f; const w = Math.ceil(g.measureText(text).width + px * 1.3), h = Math.ceil(px * 1.6); c.width = w; c.height = h;
-  g.font = f; g.fillStyle = 'rgba(29,26,25,.62)'; g.beginPath(); g.roundRect(0, 0, w, h, h / 2); g.fill();
-  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + px * .04);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, sizeAttenuation: false, depthWrite: false, transparent: true, opacity: 0, clippingPlanes: floorClip }));
-  sp.scale.set(.03 * w / h, .03, 1); sp.renderOrder = 6; sp.frustumCulled = false; return sp;
-}
 function disposeDims() {
-  if (!R || !R.dims) return; scene.remove(R.dims.grp);
-  R.dims.grp.traverse(n => { if (n.material) { n.material.map && n.material.map.dispose(); n.material.dispose(); } });
-  R.dims.geo.dispose(); R.dims = null;
+  if (!R || !R.dims) return; scene.remove(R.dims.grp); R.dims.geo.dispose(); R.dims.mat.dispose();
+  R.dims.paths.forEach(p => p.el.remove()); R.dims = null;
 }
 function placeSeg(m, a, c) { const d = new V3().subVectors(c, a), l = d.length(); m.position.copy(a).add(c).multiplyScalar(.5); m.scale.y = Math.max(l, 1e-6); if (l > 1e-9) m.quaternion.setFromUnitVectors(_up, d.divideScalar(l)); }
 function buildDims() {
   disposeDims(); if (!dimsOn || !R) return;
-  const b = R.model.fill.bounds, S0 = R.objSize, m = S0 * .025, step = S0 * .01, rr = Math.max(S0 * .0025, .0012), boxes = R.meshBoxes, tmpP = new V3();
-  const clear = (a, c) => { for (let i = 0; i <= 30; i++) { tmpP.lerpVectors(a, c, i / 30); for (const bx of boxes) if (bx.distanceToPoint(tmpP) < m) return false; } return true; };
+  const b = R.model.fill.bounds, S0 = R.objSize, m = S0 * .015, step = S0 * .006, rr = Math.max(S0 * .0022, .001), boxes = R.meshBoxes, q = new V3();
+  const clear = (a, c) => { for (let i = 0; i <= 30; i++) { q.lerpVectors(a, c, i / 30); if (q.y < m * .5) return false; for (const bx of boxes) if (bx.distanceToPoint(q) < m) return false; } return true; };
   const y0 = b.y0, y1 = b.y1, az = R.view.az;
   let best = null;
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {   // try each corner; keep the one that can sit closest to the object
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {   // try each corner with one shared gap; keep the snuggest (slightly favoring the left)
     const xE = sx > 0 ? b.maxX : b.minX, zE = sz > 0 ? b.maxZ : b.minZ;
-    let oz = m, ox = m;
-    while (oz < S0 && !clear(new V3(b.minX, y0, zE + sz * oz), new V3(b.maxX, y0, zE + sz * oz))) oz += step;
-    while (ox < S0 && !clear(new V3(xE + sx * ox, y0, b.minZ), new V3(xE + sx * ox, y0, b.maxZ))) ox += step;
-    while (ox < S0 * 1.5 && !clear(new V3(xE + sx * ox, y0, zE + sz * oz), new V3(xE + sx * ox, y1, zE + sz * oz))) { ox += step; oz += step; }
-    const left = -(sx * Math.cos(az) - sz * Math.sin(az)), front = sx * Math.sin(az) + sz * Math.cos(az);   // as seen from the starting view
-    const score = ox + oz - left * S0 * .12 - front * S0 * .02;
-    if (!best || score < best.score) best = { score, sx, sz, xE, zE, xC: xE + sx * ox, zC: zE + sz * oz };
+    let gp = m;
+    for (; gp < S0; gp += step) {
+      const xC = xE + sx * gp, zC = zE + sz * gp, yC = y1 + gp;
+      if (clear(new V3(b.minX, yC, zC), new V3(b.maxX, yC, zC)) && clear(new V3(xC, yC, b.minZ), new V3(xC, yC, b.maxZ)) && clear(new V3(xC, y0, zC), new V3(xC, y1, zC))) break;
+    }
+    const left = -(sx * Math.cos(az) - sz * Math.sin(az));
+    const score = gp - left * S0 * .02;
+    if (!best || score < best.score) best = { score, sx, sz, xE, zE, gp };
   }
-  const { sx, sz, xE, zE, xC, zC } = best, C = new V3(xC, y0, zC);
-  const grp = new THREE.Group(), geo = new THREE.CylinderGeometry(1, 1, 1, 8);
-  const mat = new THREE.MeshBasicMaterial({ color: 0x1d1a19, transparent: true, opacity: .32, depthWrite: false, clippingPlanes: floorClip });
-  const paths = [];
-  const addPath = (F, A, B, tickAxis) => {   // a line from the corner C out to F; [A, B] is the part being measured
-    const len = C.distanceTo(F) || 1, line = new THREE.Mesh(geo, mat); line.scale.set(rr, 1, rr); line.renderOrder = 5; grp.add(line);
-    const ticks = [A, B].map(P => { const t = new THREE.Mesh(geo, mat), a = P.clone(), c = P.clone(); a[tickAxis] -= rr * 7; c[tickAxis] += rr * 7;
-      placeSeg(t, a, c); t.scale.x = t.scale.z = rr; t.renderOrder = 5; t.visible = false; grp.add(t); return { m: t, t: C.distanceTo(P) / len }; });
-    const label = labelSprite(unitLabel(A.distanceTo(B))); label.position.copy(A).add(B).multiplyScalar(.5); grp.add(label);
-    paths.push({ F, line, ticks, label, tm: C.distanceTo(label.position) / len });
-  };
+  const { sx, sz, xE, zE, gp } = best, xC = xE + sx * gp, zC = zE + sz * gp, yC = y1 + gp;
   const xFar = sx > 0 ? b.minX : b.maxX, zFar = sz > 0 ? b.minZ : b.maxZ;
-  addPath(new V3(xFar, y0, zC), new V3(xE, y0, zC), new V3(xFar, y0, zC), 'y');
-  addPath(new V3(xC, y0, zFar), new V3(xC, y0, zE), new V3(xC, y0, zFar), 'y');
-  addPath(new V3(xC, y1, zC), new V3(xC, y0, zC), new V3(xC, y1, zC), 'x');
-  scene.add(grp); R.dims = { grp, geo, paths, C, t: 0, dir: 1 };
+  const grp = new THREE.Group(), geo = new THREE.CylinderGeometry(1, 1, 1, 8);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x1d1a19, transparent: true, opacity: .3, depthWrite: false, clippingPlanes: floorClip });
+  const paths = [];
+  const addPath = (A, B, tickAxis) => {   // grows from A (the end near the origin) to B
+    const line = new THREE.Mesh(geo, mat); line.renderOrder = 5; grp.add(line);
+    const ticks = [A, B].map(P => { const t = new THREE.Mesh(geo, mat), a = P.clone(), c = P.clone(); a[tickAxis] -= rr * 6; c[tickAxis] += rr * 6;
+      placeSeg(t, a, c); t.scale.x = t.scale.z = rr; t.renderOrder = 5; t.visible = false; grp.add(t); return t; });
+    const el = document.createElement('div'); el.className = 'dimtag'; el.textContent = unitLabel(A.distanceTo(B)); $('dimtags').appendChild(el);
+    paths.push({ A, B, line, ticks, el, mid: A.clone().add(B).multiplyScalar(.5), vis: 0, occ: 1, op: 0 });
+  };
+  addPath(new V3(xE, yC, zC), new V3(xFar, yC, zC), 'y');
+  addPath(new V3(xC, yC, zE), new V3(xC, yC, zFar), 'y');
+  addPath(new V3(xC, y1, zC), new V3(xC, y0, zC), 'x');
+  scene.add(grp); R.dims = { grp, geo, mat, paths, rr, t: 0, dir: 1, frame: 0 };
+}
+const dimRay = new THREE.Raycaster();
+function labelHidden(p) {   // is the object (its solid, non-see-through parts) between the camera and this label?
+  const dir = p.clone().sub(cam.position), dist = dir.length(); dimRay.set(cam.position, dir.divideScalar(dist)); dimRay.far = dist * .985;
+  const hits = dimRay.intersectObject(R.model.group, true);
+  return hits.some(h => h.object.visible && !(h.object.material.transparent && h.object.material.opacity < .85));
 }
 function animDims(dt) {
   const D = R && R.dims; if (!D) return;
-  D.t = clamp(D.t + D.dir * dt / (reduceMotion ? .2 : .8), 0, 1);
-  const e = easeInOutCubic(D.t);
+  D.t = clamp(D.t + D.dir * dt / (reduceMotion ? .2 : .85), 0, 1);
+  const e = easeInOutCubic(D.t), check = (D.frame++ % 3) === 0;
   for (const p of D.paths) {
-    placeSeg(p.line, D.C, D.C.clone().lerp(p.F, e)); p.line.scale.x = p.line.scale.z = p.ticks[0].m.scale.x; p.line.visible = e > .001;
-    for (const tk of p.ticks) tk.m.visible = e >= tk.t - 1e-4;
-    p.label.material.opacity = smooth(p.tm - .02, p.tm + .14, e);   // the label fades in once the line reaches it
+    placeSeg(p.line, p.A, p.A.clone().lerp(p.B, e)); p.line.scale.x = p.line.scale.z = D.rr; p.line.visible = e > .001;
+    p.ticks[0].visible = e > .001; p.ticks[1].visible = e >= .999;
+    const grow = smooth(.5, .9, e);                       // fades in once the line passes its halfway point
+    if (check) p.occ = labelHidden(p.mid) ? 0 : 1;
+    p.vis = lerp(p.vis, p.occ, 1 - Math.exp(-dt * 7));    // ease between shown and hidden behind the object
+    p.op = grow * p.vis;
+    const sp = toScreen(p.mid); p.el.style.opacity = sp.ok ? p.op.toFixed(3) : 0;
+    p.el.style.transform = `translate(${sp.x}px,${sp.y}px) translate(-50%,-50%)`;
   }
   if (D.dir < 0 && D.t <= 0) disposeDims();
 }
