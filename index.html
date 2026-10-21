@@ -162,6 +162,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
 .row .nm b{display:block;font-weight:900;font-size:14.5px;letter-spacing:-.02em}
 .row .nm span{display:block;font-weight:700;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .p{font-weight:900;font-size:20px;letter-spacing:-.04em}
+button.row{width:100%;text-align:left;font-family:inherit}
+button.row:active{transform:scale(.98)}
 .next{text-align:center;font-weight:800;font-size:13px;color:var(--muted);margin-top:12px}
 .muted{color:var(--muted);font-weight:700;font-size:14px;text-align:center}
 #toast{position:fixed;left:50%;bottom:110px;transform:translate(-50%,20px);background:var(--ink);color:#fff;font-weight:900;padding:12px 20px;border-radius:999px;
@@ -276,6 +278,15 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
   </div>
 </div>
 
+<div class="modal" id="mLevels" role="dialog" aria-modal="true" aria-labelledby="lT">
+  <div class="sheet">
+    <button class="x" data-close aria-label="Close">×</button>
+    <h2 id="lT">levels</h2>
+    <p class="muted" style="text-align:left;margin:-8px 0 12px">Play any object as practice. It won't count toward today.</p>
+    <div class="rows" id="lvlRows"></div>
+  </div>
+</div>
+
 <div class="modal" id="mColl" role="dialog" aria-modal="true" aria-labelledby="cT">
   <div class="sheet">
     <button class="x" data-close aria-label="Close">×</button>
@@ -329,7 +340,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:8px
       <div class="hcard">
         <div class="eyebrow">More ways to play</div>
         <div class="tiles">
-          <button class="tile" id="hHow"><span class="ic">📖</span><span>How to&nbsp;play<small>rules</small></span></button>
+          <button class="tile" id="hLevels"><span class="ic">🎯</span><span>Levels<small>pick any</small></span></button>
           <button class="tile" disabled><span class="ic">🎲</span><span>Practice<small>soon</small></span></button>
           <button class="tile" disabled><span class="ic">🏆</span><span>Gauntlet<small>soon</small></span></button>
         </div>
@@ -448,7 +459,7 @@ function dailyObjects(date) {
 const DAILY_OVERRIDES = {
   '2026-10-21': ['fishbowl', 'wheelbarrow', 'phonebooth', 'container', 'balloon'],
 };
-const DAILY = DAILY_OVERRIDES[TODAY] ? DAILY_OVERRIDES[TODAY].map(id => OBJECTS.find(o => o.id === id)).filter(Boolean) : dailyObjects(TODAY);
+let DAILY = DAILY_OVERRIDES[TODAY] ? DAILY_OVERRIDES[TODAY].map(id => OBJECTS.find(o => o.id === id)).filter(Boolean) : dailyObjects(TODAY);
 if (DB.day.rounds.some((r, i) => r && (!DAILY[i] || r.id !== DAILY[i].id))) DB.day = { date: TODAY, rounds: [] };   // lineup changed: start the day fresh
 DB.day.ids = DAILY.map(o => o.id); save();
 
@@ -775,7 +786,7 @@ const MODELS = {
 
     const P = [[-2.2, .45], [1.3, .45], [1.3, .95], [1.0, 1.02], [.2, 1.45], [-.9, 1.52], [-1.65, 1.45], [-2.2, 1.06]];
     const hw = .78, PO = [[-2.58, .3], [2.58, .3], [2.58, .92], [1.12, 1.06], [.2, 1.58], [-.9, 1.65], [-1.75, 1.57], [-2.35, 1.1], [-2.6, .98]];
-    const ovU = { type: 'door', at: new V3(.25, .5, 1.02), dir: [0, 1], w: 1.0, h: .6, hole: true, open: k => { door.visible = k > 0; door.rotation.y = 1.15 * k; } };
+    const ovU = { type: 'door', at: new V3(.25, .5, 1.02), dir: [0, 1], w: 1.0, h: .6, hole: true, leaves: [door], open: k => { door.visible = k > 0; door.rotation.y = 1.15 * k; } };
     return {
       group: g, closed: true, view: { az: .78, polar: 1.2 },
       solidAt: (x, y, z) => Math.abs(z) < 1.0 && inPoly(x, y, PO) && !(Math.abs(z) <= hw && inPoly(x, y, P)) && !(ovU.holeOpen && x > -.45 && x < .95 && y > .45 && y < 1.4 && z > .55),
@@ -822,7 +833,7 @@ const MODELS = {
     const wheel = (x, w, z) => { const t = mk(cyl(.52, .52, w, 28), black, x, .52, z, g); t.rotation.x = Math.PI / 2;
       mk(cyl(.26, .26, w + .02, 20), M('#D8DCE0', .35, .6), x, .52, z, g, false).rotation.x = Math.PI / 2; };
     for (const z of [-1, 1]) { wheel(4.35, .34, z * 1.0); wheel(-2.7, .58, z * .95); }
-    const ovB = { type: 'door', at: new V3(3.31, .95, 1.3), dir: [0, 1], w: .6, h: 1.3, hole: true, open: k => doorP.forEach(([pv, sd]) => { pv.rotation.y = -sd * 1.45 * k; }) };
+    const ovB = { type: 'door', at: new V3(3.31, .95, 1.3), dir: [0, 1], w: .6, h: 1.3, hole: true, leaves: doorP.map(d => d[0]), open: k => doorP.forEach(([pv, sd]) => { pv.rotation.y = -sd * 1.45 * k; }) };
     return {
       group: g, closed: true, view: { az: .66, polar: 1.18 },
       solidAt: (x, y, z) => { const body = x > -5.85 && x < 3.95 && y > .72 && y < 3.22 && Math.abs(z) < 1.27, hood = x >= 3.95 && x < 5.65 && y > .72 && y < 1.78 && Math.abs(z) < 1.12;
@@ -1023,7 +1034,7 @@ const MODELS = {
     face(g, 0, -.5, Math.PI); face(g, .5, 0, Math.PI / 2); face(g, -.5, 0, -Math.PI / 2);
     const door = new THREE.Group(); door.position.set(-.43, 0, .5); g.add(door);    // the whole front swings open
     face(door, .43, 0, 0); shell(mk(rbox(.04, .16, .04, .015), M('#2a2a2a', .4), .76, 1.2, .05, door));
-    const ovP = { type: 'door', at: new V3(0, .15, .52), dir: [0, 1], w: .7, h: 1.5, hole: true, open: k => { door.rotation.y = -1.6 * k; } };
+    const ovP = { type: 'door', at: new V3(0, .15, .52), dir: [0, 1], w: .7, h: 1.5, hole: true, leaves: [door], open: k => { door.rotation.y = -1.6 * k; } };
     const inside = (x, z, y) => Math.abs(x) <= I && Math.abs(z) <= I && y >= .15 && y <= top;
     return {
       group: g, closed: true, view: { az: .62, polar: 1.2 },
@@ -1047,7 +1058,7 @@ const MODELS = {
         shell(mk(rbox(.04, .3, .05, .01), bars, -.07, 1.1, -sd * (off - .08), pv, false)); }
       return pv; };
     const lA = leaf(1.2, 1), lB = leaf(-1.2, -1);
-    const ovC = { type: 'door', at: new V3(-6.14, .2, 0), dir: [-1, 0], w: 2.1, h: 1.8, hole: true, open: k => { lA.rotation.y = 1.9 * k; lB.rotation.y = -1.9 * k; } };
+    const ovC = { type: 'door', at: new V3(-6.14, .2, 0), dir: [-1, 0], w: 2.1, h: 1.8, hole: true, leaves: [lA, lB], open: k => { lA.rotation.y = 1.9 * k; lB.rotation.y = -1.9 * k; } };
     const inside = (x, z, y) => Math.abs(x) <= 6.0 && Math.abs(z) <= 1.15 && y >= .18 && y <= 2.5;
     return {
       group: g, closed: true, view: { az: -.75, polar: 1.18 },
@@ -1122,7 +1133,7 @@ function packer(mesh, dummy) { let n = 0; return {
    physics cheap: only moving balls are simulated.
    ===================================================================== */
 const MAX_BALLS = isMobile ? 10400 : 16000;   // visible balls per phase
-const PACKING = .6;                        // how tightly loose balls pack
+const PACKING = .55;                       // how tightly loose balls pack
 const PIT_COLOR = '#5b3626';
 
 function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
@@ -1137,11 +1148,22 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       for (let ix = 0; ix < NG; ix++) for (let iz = 0; iz < NG; iz++) if (inside(b.minX + (ix + .5) * bw / NG, b.minZ + (iz + .5) * bd / NG, y)) c++;
       Vvis += c / (NG * NG) * bw * bd * H / NY; } }
   Vvis = Math.max(Vvis, 1e-9);
-  const rFor = ratio => Math.min(objSize * .08, Math.cbrt(Vvis / answer * ratio * PACKING * 3 / (4 * Math.PI)));
+  const rFor = (ratio, nb = MAX_BALLS) => { const pk = PACKING - .6 * clamp(1 - Math.log10(Math.max(nb, 1)) / 3.5, 0, 1);   // few big balls pack worse
+    return Math.min(objSize * .08, Math.cbrt(Vvis / answer * ratio * pk * 3 / (4 * Math.PI))); };
 
   // ---- the object's walls as a voxel signed-distance field ----
   const solid0 = model.solidAt || ((x, y, z) => x > objBox.min.x && x < objBox.max.x && z > objBox.min.z && z < objBox.max.z && y < objBox.max.y && !inside(x, z, y));
-  const solidAt = (x, y, z) => solid0(x, y, z) && !(ov && ov.type === 'burst' && ov.holeOpen && Math.hypot(x - ov.at.x, y - ov.at.y, z - ov.at.z) < (ov.w || .4)); // a burst point breaks open
+  let leafSolid = false; const leafBoxes = [];
+  if (ov && ov.leaves && ov.open) {   // measure the door leaves fully open, then close them again
+    ov.open(1);
+    for (const lf of ov.leaves) { lf.updateMatrixWorld(true); lf.traverse(n => { if (!n.isMesh || n.isInstancedMesh) return;
+      if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
+      leafBoxes.push({ inv: n.matrixWorld.clone().invert(), box: n.geometry.boundingBox.clone().expandByScalar(.01) });   // each panel in its own (rotated) space
+      objBox = objBox.clone().union(new THREE.Box3().setFromObject(n)); }); }
+    ov.open(0);
+  }
+  const _lp = new V3();
+  const solidAt = (x, y, z) => (leafSolid && leafBoxes.some(L => L.box.containsPoint(_lp.set(x, y, z).applyMatrix4(L.inv)))) || solid0(x, y, z) && !(ov && ov.type === 'burst' && ov.holeOpen && Math.hypot(x - ov.at.x, y - ov.at.y, z - ov.at.z) < (ov.w || .4)); // a burst point breaks open
   const vs = objSize / (isMobile ? 56 : 70);
   const ox = objBox.min.x - 2 * vs, oy = -vs, oz = objBox.min.z - 2 * vs;
   const nx = Math.ceil((objBox.max.x - ox) / vs) + 3, ny = Math.ceil((objBox.max.y - oy) / vs) + 3, nz = Math.ceil((objBox.max.z - oz) / vs) + 3;
@@ -1187,17 +1209,19 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const vx = new Float32Array(CAP), vy = new Float32Array(CAP), vz = new Float32Array(CAP);
   const rad = new Float32Array(CAP), scl = new Float32Array(CAP), still = new Float32Array(CAP);
   const alive = new Uint8Array(CAP), awake = new Uint8Array(CAP), out = new Uint8Array(CAP), landed = new Uint8Array(CAP);
-  const sup = new Uint8Array(CAP), con = new Uint8Array(CAP), pm = new Float32Array(CAP);
+  const sup = new Uint8Array(CAP), con = new Uint8Array(CAP), pm = new Float32Array(CAP), inn = new Uint8Array(CAP), kicked = new Uint8Array(CAP), cnx = new Float32Array(CAP), cny = new Float32Array(CAP), cnz = new Float32Array(CAP);
   const cols = [], quats = [];
   let n = 0, rMax = SCOOP_R;
   const g = Math.max(9.8, 2 * (H * 1.5 + objSize * .3) / (.95 * .95));
   const addBall = (x, y, z, r, vx0 = 0, vy0 = 0, vz0 = 0, sleeping = false) => {
     if (n >= CAP) return -1; const i = n++;
     px[i] = qx[i] = x; py[i] = qy[i] = y; pz[i] = qz[i] = z; vx[i] = vx0; vy[i] = vy0; vz[i] = vz0;
-    rad[i] = r; scl[i] = 1; alive[i] = 1; awake[i] = sleeping ? 0 : 1; still[i] = 0; out[i] = 0; landed[i] = sleeping ? 1 : 0;
+    inn[i] = closed && inside(x, z, y) ? 1 : 0; kicked[i] = 0; rad[i] = r; scl[i] = 1; alive[i] = 1; awake[i] = sleeping ? 0 : 1; still[i] = 0; out[i] = 0; landed[i] = sleeping ? 1 : 0;
     cols[i] = new THREE.Color(FLAVORS[pickFlavor(rng)]);
     quats[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rng() * 6.3, rng() * 6.3, rng() * 6.3));
-    if (r > rMax) rMax = r; return i;
+    if (r > rMax) rMax = r;
+    if (hashReady) { const k = hk(Math.floor(x / cell), Math.floor(y / cell), Math.floor(z / cell)); nxt[i] = head[k]; head[k] = i; }
+    return i;
   };
   const geo = MAX_BALLS <= 400 ? SCOOP_MID : (isMobile || MAX_BALLS > 12000) ? SCOOP_LOW : SCOOP_LUMP;
   const mesh = new THREE.InstancedMesh(geo, scoopMat, CAP); mesh.count = 0; mesh.frustumCulled = false;
@@ -1208,12 +1232,13 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const HB = 1 << 17, head = new Int32Array(HB), nxt = new Int32Array(CAP);
   let cell = 1;
   const hk = (i, j, k) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & (HB - 1);
-  const rebuildHash = () => { cell = rMax * 2; head.fill(-1);
+  let hashReady = false;
+  const rebuildHash = () => { cell = rMax * 2; head.fill(-1); hashReady = true;
     for (let i = 0; i < n; i++) if (alive[i]) { const k = hk(Math.floor(px[i] / cell), Math.floor(py[i] / cell), Math.floor(pz[i] / cell)); nxt[i] = head[k]; head[k] = i; } };
-  const occupied = (x, y, z, r) => { // any ball overlapping this spot?
+  const occupied = (x, y, z, r, f = .85) => { // any ball overlapping this spot?
     const ci = Math.floor(x / cell), cj = Math.floor(y / cell), ck = Math.floor(z / cell);
     for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
-      for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) { const dx = px[j] - x, dy = py[j] - y, dz = pz[j] - z, rr = (rad[j] + r) * .85; if (dx * dx + dy * dy + dz * dz < rr * rr) return true; }
+      for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) { const dx = px[j] - x, dy = py[j] - y, dz = pz[j] - z, rr = (rad[j] + r) * f; if (dx * dx + dy * dy + dz * dz < rr * rr) return true; }
     return false; };
 
   // ---- the floor cut (for over-guesses) ----
@@ -1245,16 +1270,17 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const setHole = r => { holeR = r; occl.material.uniforms.uR.value = r; pit.scale.set(r, 1, r); pitFloor.scale.set(r, 1, r); };
 
   // ---- spawning ----
-  const queue = [], retry = []; let qi = 0, retryT = 0;
+  const queue = [], retry = []; let qi = 0, retryT = 0, failStreak = 0, interiorFull = false;
   const skyY = () => b.y1 + H * .5 + objSize * .25 + rng() * objSize * .1;
-  const spot = (r = 0) => { const y = b.y1 - 1e-3, e = r * 1.25;
+  const spot = (r = 0) => { const y = b.y1 - 1e-3, e = r * 2.2;
     for (let k = 0; k < 60; k++) { const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng());
       if (inside(x, z, y) && (!e || (inside(x + e, z, y) && inside(x - e, z, y) && inside(x, z + e, y) && inside(x, z - e, y)))) return [x, z]; }
     return r ? spot(0) : [cx, cz]; };
-  let doorOpen = false, doorT = 0;
+  let doorOpen = false, doorT = 0, doorReady = false; const pendingOut = [];
   const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; hooks.doorOpened && hooks.doorOpened(); }; // walls stay sealed: only new spill comes out
-  const emitOut = r => { // out of the door / burst point
-    openDoor(); const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1, dx = ov.dir[0] / dl, dz = ov.dir[1] / dl, w = ov.w || .4, h = ov.h || .4;
+  const emitOut = r => { // out of the door / burst point, once it has fully swung open
+    if (!doorReady) { openDoor(); pendingOut.push(r); return; }
+    const at = ov.at, dl = Math.hypot(ov.dir[0], ov.dir[1]) || 1, dx = ov.dir[0] / dl, dz = ov.dir[1] / dl, w = ov.w || .4, h = ov.h || .4;
     const s = (rng() - .5) * w, v = Math.sqrt(g * H) * (.5 + rng() * .35);
     if (ov.down) { addBall(at.x + (rng() - .5) * w, at.y - r * 1.2, at.z + (rng() - .5) * w, r, (rng() - .5) * v * .3, -v * .2, (rng() - .5) * v * .3); return; }
     // start just clear of the outside of the wall, so nothing gets shoved back into the full interior
@@ -1265,33 +1291,45 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   // closed objects: a coarse height map of the settled pile, so each ball drops into the lowest open spot
   const HG = 40, hgx = (b.maxX - b.minX) / HG || 1, hgz = (b.maxZ - b.minZ) / HG || 1, hmap = new Float32Array(HG * HG).fill(b.y0);
   const hcell = (x, z) => clamp(Math.floor((x - b.minX) / hgx), 0, HG - 1) + HG * clamp(Math.floor((z - b.minZ) / hgz), 0, HG - 1);
-  const settle = i => { if (!closed) return; const r = rad[i], top = py[i] + r * .9;
+  const settle = i => { const r = rad[i], top = py[i] + r * .9;
     for (let x = px[i] - r; x <= px[i] + r + 1e-9; x += Math.max(hgx, r)) for (let z = pz[i] - r; z <= pz[i] + r + 1e-9; z += Math.max(hgz, r)) { const c = hcell(x, z); if (top > hmap[c]) hmap[c] = top; } };
   const ceilAt = (x, z) => { for (let y = b.y1 - 1e-3; y > b.y0; y -= H / 64) if (inside(x, z, y)) return y; return -1; };
   const midYs = [.2, .5, .8].map(f => lerp(b.y0, b.y1, f));
   const spawn = q => {
     const r = q.r;
     if (closed) {               // fill from just under the roof; when there's no room left, it pours out the door
+      const full = q.over && pouredA >= answer;          // only spill once the real capacity has been poured in
+      if (full && interiorFull) { if (ov && ov.hole) emitOut(r); return; }
       let best = null;
       for (let k = 0; k < 16; k++) {
         const x = lerp(b.minX, b.maxX, rng()), z = lerp(b.minZ, b.maxZ, rng()); if (!midYs.some(y => inside(x, z, y))) continue;
         const c = ceilAt(x, z); if (c < 0) continue; const hgt = hmap[hcell(x, z)]; if (c - hgt < r * 2.1) continue;
         if (!best || hgt < best[3]) best = [x, c - r * 1.05, z, hgt];
       }
-      const full = q.over && pouredA >= answer;          // only spill once the real capacity has been poured in
-      if (best && (!full || !occupied(best[0], best[1], best[2], r))) { addBall(best[0], best[1], best[2], r, 0, -Math.sqrt(g * r), 0); return; }
-      if (!full) { q.tries = (q.tries || 0) + 1; if (q.tries < 8) { retry.push(q); return; } }   // no room yet: wait for the pile to settle, then try again
-      if (q.over && ov && ov.hole) emitOut(r);   // corrections never spill: a full car just stops taking more
-    } else { let x, z, y = skyY(); for (let k = 0; k < 6; k++) { [x, z] = spot(r); if (!occupied(x, y, z, r * 1.2)) break; y += r * 2.5; }
+      if (best && !occupied(best[0], best[1], best[2], r, 1.02)) { addBall(best[0], best[1], best[2], r, 0, -Math.sqrt(g * r), 0); failStreak = 0; return; }
+      if (!best && full && ++failStreak > 40) interiorFull = true;   // no column has room left: it's really full, send the rest straight out
+      q.tries = (q.tries || 0) + 1;
+      if (q.tries < (full ? 6 : 10)) { retry.push(q); return; }   // no room right now: wait for the pile to settle before deciding it's full
+      if (full && ov && ov.hole) emitOut(r);                      // truly full: the extra spills out (a correction never spills)
+    } else { let x, z, y = skyY(), lo = Infinity;   // aim at the lowest part of the pile so it fills evenly instead of heaping at an edge
+      for (let k = 0; k < 8; k++) { const [cx2, cz2] = spot(r), hh = hmap[hcell(cx2, cz2)] + rng() * r * .5; if (hh < lo) { lo = hh; x = cx2; z = cz2; } }
+      for (let k = 0; k < 6 && occupied(x, y, z, r * 1.2); k++) y += r * 2.5;
       addBall(x, y, z, r, 0, -rng() * Math.sqrt(g * H) * .3, 0); }
   };
   const schedule = (scoops, t0, over) => {   // returns the number of balls
-    const ratio = Math.max(1, Math.ceil(scoops / MAX_BALLS)), nb = Math.ceil(scoops / ratio), r = rFor(ratio);
-    const dur = (reduceMotion ? .5 : 1) * lerp(1.1, 3.6, clamp(Math.log(nb) / Math.log(MAX_BALLS), 0, 1));
+    const ratio = Math.max(1, Math.ceil(scoops / MAX_BALLS)), nb = Math.ceil(scoops / ratio), r = rFor(ratio, nb);
+    let dur = (reduceMotion ? .5 : 1) * lerp(1.1, 3.6, clamp(Math.log(nb) / Math.log(MAX_BALLS), 0, 1));
+    if (narrowMouth) dur = Math.max(dur, Math.min(nb * .1, 9));   // a narrow mouth takes them one at a time, so nothing jams and spills
     for (let k = 0; k < nb; k++) queue.push({ t: t0 + (nb === 1 ? 0 : dur * k / (nb - 1)), r, over, scoops: k < nb - 1 ? ratio : scoops - ratio * (nb - 1) });
     return { nb, dur };
   };
 
+  // how much narrower the mouth is than the widest part (fishbowl ≈ .3, tub ≈ 1)
+  let topA = 0, wideA = 0; { const NG = 30, bw = b.maxX - b.minX, bd = b.maxZ - b.minZ;
+    for (const [fy, isTop] of [[.999, 1], [.2, 0], [.35, 0], [.5, 0], [.65, 0], [.8, 0]]) { const y = lerp(b.y0, b.y1, fy); let c = 0;
+      for (let ix = 0; ix < NG; ix++) for (let iz = 0; iz < NG; iz++) if (inside(b.minX + (ix + .5) * bw / NG, b.minZ + (iz + .5) * bd / NG, y)) c++;
+      if (isTop) topA = c; else wideA = Math.max(wideA, c); } }
+  const narrowMouth = !closed && topA < wideA * .6, mouthY = b.y1 - H * .15;
   // ---- physics step ----
   let plopBudget = 0;
   const step = dt => {
@@ -1305,7 +1343,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         qx[i] = px[i]; qy[i] = py[i]; qz[i] = pz[i]; vy[i] -= g * h; pm[i] = Math.hypot(vx[i], vy[i], vz[i]);
         let dx = vx[i] * h, dy = vy[i] * h, dz = vz[i] * h; const m = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
         if (m > maxStep) { const f = maxStep / m; dx *= f; dy *= f; dz *= f; }
-        px[i] += dx; py[i] += dy; pz[i] += dz; sup[i] = 0; con[i] = 0; }
+        px[i] += dx; py[i] += dy; pz[i] += dz; sup[i] = 0; con[i] = 0; cnx[i] = cny[i] = cnz[i] = 0;
+        if (narrowMouth && !kicked[i] && py[i] < mouthY) { kicked[i] = 1; const a = rng() * 6.283, v = Math.sqrt(g * H) * (.15 + rng() * .3); vx[i] += Math.cos(a) * v; vz[i] += Math.sin(a) * v; } }
       // ball-ball contacts (sleeping balls act as fixed)
       for (let i = 0; i < n; i++) { if (!awake[i]) continue;
         const ci = Math.floor(px[i] / cell), cj = Math.floor(py[i] / cell), ck = Math.floor(pz[i] / cell);
@@ -1313,37 +1352,49 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
           for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) {
             if (j === i || (awake[j] && j < i)) continue;
             const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j], rr = rad[i] + rad[j], d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 >= rr * rr || d2 < 1e-12) continue;
+            if (d2 >= rr * rr) continue;
+            if (d2 < 1e-12) { px[i] += (rng() - .5) * rr * .2; pz[i] += (rng() - .5) * rr * .2; continue; }   // exactly stacked: nudge apart
             const d = Math.sqrt(d2), pen = rr - d, nx0 = dx / d, ny0 = dy / d, nz0 = dz / d;
             if (awake[j]) { const wi = rad[j] ** 3 / (rad[i] ** 3 + rad[j] ** 3), wj = 1 - wi;
               px[i] += nx0 * pen * wi; py[i] += ny0 * pen * wi; pz[i] += nz0 * pen * wi; px[j] -= nx0 * pen * wj; py[j] -= ny0 * pen * wj; pz[j] -= nz0 * pen * wj;
-              con[j]++; if (ny0 < -.35) sup[j]++; }
+              con[j]++; if (ny0 < -.35) sup[j]++; cnx[j] -= nx0; cny[j] -= ny0; cnz[j] -= nz0; }
             else { px[i] += nx0 * pen; py[i] += ny0 * pen; pz[i] += nz0 * pen; }
-            con[i]++; if (ny0 > .35) sup[i]++;
+            con[i]++; if (ny0 > .35) sup[i]++; cnx[i] += nx0; cny[i] += ny0; cnz[i] += nz0;
           } }
       // walls and floor
       for (let i = 0; i < n; i++) { if (!awake[i]) continue; const r = rad[i];
         const d = sample(px[i], py[i], pz[i]);
         if (d < r) { const e = vs * .5;
           let gx = sample(px[i] + e, py[i], pz[i]) - sample(px[i] - e, py[i], pz[i]), gy = sample(px[i], py[i] + e, pz[i]) - sample(px[i], py[i] - e, pz[i]), gz = sample(px[i], py[i], pz[i] + e) - sample(px[i], py[i], pz[i] - e);
-          const gl = Math.hypot(gx, gy, gz); if (gl > 1e-9 && gl < 1e8) { gx /= gl; gy /= gl; gz /= gl; const p = r - d; px[i] += gx * p; py[i] += gy * p; pz[i] += gz * p; con[i]++; if (gy > .35) sup[i] += 2; } }
-        if (py[i] < r && qy[i] >= r * .4 && hasGround(px[i], pz[i])) { py[i] = r; con[i]++; sup[i] += 2; }
+          const gl = Math.hypot(gx, gy, gz); if (gl > 1e-9 && gl < 1e8) { gx /= gl; gy /= gl; gz /= gl; const p = r - d; px[i] += gx * p; py[i] += gy * p; pz[i] += gz * p; con[i]++; cnx[i] += gx; cny[i] += gy; cnz[i] += gz; if (gy > .35) sup[i] += 2; } }
+        if (py[i] < r && qy[i] >= r * .4 && hasGround(px[i], pz[i])) { py[i] = r; con[i]++; sup[i] += 2; cny[i] += 1; }
+        if (closed && inside(px[i], pz[i], py[i]) !== !!inn[i]) { px[i] = qx[i]; py[i] = qy[i]; pz[i] = qz[i]; con[i]++; sup[i] += 2; }   // walls can't be crossed
       }
       // velocities, friction, sleeping
       for (let i = 0; i < n; i++) { if (!awake[i]) continue;
         vx[i] = (px[i] - qx[i]) / h; vy[i] = (py[i] - qy[i]) / h; vz[i] = (pz[i] - qz[i]) / h;
         { const sp = Math.hypot(vx[i], vy[i], vz[i]), cap = Math.max(pm[i], .08 * Math.sqrt(g * rad[i]));  // pushes never add energy (no creeping speed-up in a crowd)
           if (sp > cap) { const f = cap / sp; vx[i] *= f; vy[i] *= f; vz[i] *= f; } }
-        if (con[i]) { vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= .3; }   // ice cream doesn't bounce much
+        if (con[i]) { const nl = Math.hypot(cnx[i], cny[i], cnz[i]);   // soft ice cream: hits soak up the rebound, rolling and sliding carry on
+          if (nl > 1e-6) { const ux = cnx[i] / nl, uy = cny[i] / nl, uz = cnz[i] / nl, vn = vx[i] * ux + vy[i] * uy + vz[i] * uz;
+            if (vn > 0) { vx[i] -= ux * vn * .9; vy[i] -= uy * vn * .9; vz[i] -= uz * vn * .9; } }
+          vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= .3; }
         if (sup[i]) { vx[i] *= sdamp; vy[i] *= sdamp; vz[i] *= sdamp;
           if (!landed[i]) { landed[i] = 1; if (plopBudget > 0) { plopBudget--; plop(.75 + rng() * .5, .1); } } }
         const sp2 = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i], thr = .25 * Math.sqrt(g * rad[i]);
         if (con[i] && sp2 < thr * thr) { still[i] += h;   // resting: supported from below, or wedged in place for a while
-          if (!out[i] && (sup[i] >= 2 ? still[i] > .18 : still[i] > .6)) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0; settle(i); } } else still[i] = 0;
+          if (!out[i] && (sup[i] >= 2 ? still[i] > .18 : still[i] > .35)) { awake[i] = 0; vx[i] = vy[i] = vz[i] = 0;
+            if (sunkIn(i)) { alive[i] = 0; continue; }   // a squeezed-in extra that ended up half inside another ball: drop it rather than freeze it merged
+            settle(i); } } else still[i] = 0;
         if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; }
       }
     }
   };
+  const sunkIn = i => { const ci = Math.floor(px[i] / cell), cj = Math.floor(py[i] / cell), ck = Math.floor(pz[i] / cell);
+    for (let a = -1; a <= 1; a++) for (let bb = -1; bb <= 1; bb++) for (let c = -1; c <= 1; c++)
+      for (let j = head[hk(ci + a, cj + bb, ck + c)]; j >= 0; j = nxt[j]) { if (j === i || !alive[j] || awake[j]) continue;
+        const dx = px[j] - px[i], dy = py[j] - py[i], dz = pz[j] - pz[i], rr = (rad[i] + rad[j]) * .62; if (dx * dx + dy * dy + dz * dz < rr * rr) return true; }
+    return false; };
   const anyAwake = () => { for (let i = 0; i < n; i++) if (awake[i]) return true; return false; };
   const draw = dt => {
     const tq = new THREE.Quaternion(), ax = new V3();
@@ -1355,7 +1406,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
 
   // ---- timeline ----
   const P = Object.assign(P0, { group, phase: 'your', count: 0, done: false, extent: footR, hole: 0 });
-  let doneT = 0, pouredA = 0, t = 0, phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0;
+  let outT = 0, doneT = 0, pouredA = 0, t = 0, phase = 'A', pt = 0, lastSpawnT = 0, cutT = 0, holeMax = 0, extentT = 0;
   const startA = () => { const s = schedule(guess, .15, true); lastSpawnT = .15 + s.dur; };
   startA();
   const settled = () => qi >= queue.length && !retry.length && (!anyAwake() || t - lastSpawnT > 2.6) && t - lastSpawnT > .5;
@@ -1364,7 +1415,9 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     if (n === 0 || qi < queue.length) rebuildHash();
     while (qi < queue.length && queue[qi].t <= t) { const q = queue[qi++]; spawn(q); if (phase === 'A') { P.count += q.scoops; pouredA += q.scoops; } }
     retryT -= dt; if (retry.length && retryT <= 0) { retryT = .12; for (const q of retry.splice(0, 40)) spawn(q); }
-    if (doorOpen && doorT < 1) { doorT = Math.min(1, doorT + dt / .45); ov.open && ov.open(easeInOutSine(doorT)); }
+    if (doorOpen && doorT < 1) { doorT = Math.min(1, doorT + dt / .45); ov.open && ov.open(easeInOutSine(doorT));
+      if (doorT >= 1) { leafSolid = true; buildSDF(); doorReady = true; } }   // the open door becomes a solid the spill bounces off
+    if (doorReady && pendingOut.length) { outT -= dt; if (outT <= 0) { outT = .06; for (const r of pendingOut.splice(0, 24)) emitOut(r); } }
     if (anyAwake()) step(dt);
     if (phase === 'A' && settled()) { pt = 0;
       if (guess !== answer) hooks.correctionStart && hooks.correctionStart();
@@ -1402,7 +1455,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   };
   /* Skip straight to the end state: the object filled with the real amount */
   P.finishInstant = () => {
-    const ratio = Math.max(1, Math.ceil(answer / MAX_BALLS)), nb = Math.ceil(answer / ratio), r = rFor(ratio);
+    const ratio = Math.max(1, Math.ceil(answer / MAX_BALLS)), nb = Math.ceil(answer / ratio), r = rFor(ratio, nb);
     let s = Math.cbrt(Vvis / nb), pts = [];
     for (let iter = 0; iter < 20; iter++) { pts = [];
       for (let y = b.y0 + r; y < b.y1; y += s) for (let x = b.minX + s * .5; x < b.maxX; x += s) for (let z = b.minZ + s * .5; z < b.maxZ; z += s) {
@@ -1523,7 +1576,8 @@ const ui = { q: $('question'), qwrap: $('qwrap'), form: $('guessForm'), gval: $(
   card: $('card'), reset: $('bReset'), results: $('bResults'), scoopTag: $('scoopTag'), line: $('scoopLine'), dot: $('scoopDot') };
 $('pnum').textContent = `No. ${PUZZLE_NO}`;
 function renderProgress(cur) {
-  [...$('prog').children].forEach((el, i) => { const r = DB.day.rounds[i]; el.className = r ? tier(r.acc) : i === cur ? 'cur' : ''; });
+  const rs = practice ? practice.rounds : DB.day.rounds;
+  [...$('prog').children].forEach((el, i) => { const r = rs[i]; el.style.visibility = i < DAILY.length ? '' : 'hidden'; el.className = r ? tier(r.acc) : i === cur ? 'cur' : ''; });
 }
 let guessDigits = '';
 function setDigits(d) {
@@ -1671,10 +1725,12 @@ function submitGuess() {
   ensureAudio();
   const guess = Number(guessDigits), acc = accuracy(guess, R.answer);
   R.guess = guess; R.acc = acc;
+  if (practice) practice.rounds[R.idx] = { id: R.obj.id, guess, answer: R.answer, acc };   // practice rounds aren't saved
+  else {
   DB.day.rounds[R.idx] = { id: R.obj.id, guess, answer: R.answer, acc };
   DB.seen ||= {}; if (!DB.seen[R.obj.id] || acc > DB.seen[R.obj.id]) DB.seen[R.obj.id] = acc;   // best accuracy per object
   if (DB.day.rounds.filter(Boolean).length >= DAILY.length && !DB.day.done) completeDay();
-  save();
+  save(); }
   state = 'fill'; lockCam(); camTween = null;
   if (dimsOn) { dimsOn = false; $('bDims').classList.remove('on'); $('bDims').setAttribute('aria-pressed', false); if (R.dims) R.dims.dir = -1; }
   if (R.scoopZoom) { R.scoopZoom = false; setOrbitLimits(false); }
@@ -1731,7 +1787,6 @@ function finishFill() {
   R.pouring = false; state = 'result';
   controls.enableZoom = true; controls.minDistance = R.minD;
   controls.maxDistance = Math.max(R.view.dist * 2.2, cam.position.distanceTo(controls.target) * 1.4);
-  showChips(true);
   showCard();
   if (R.acc >= 95) { confetti(); }
 }
@@ -1740,13 +1795,14 @@ function showCard() {
   const { guess, answer, acc, idx, obj } = R, v = verdict(guess, answer, acc);
   $('rAcc').textContent = acc + '%'; $('rLabel').textContent = v.label; $('rSub').textContent = v.sub;
   $('rGuess').textContent = fmt(guess); $('rAns').textContent = fmt(answer); $('rFact').textContent = obj.fact;
-  $('bNext').textContent = idx < DAILY.length - 1 ? 'Next' : 'See score';
+  $('bNext').textContent = practice ? 'Levels' : idx < DAILY.length - 1 ? 'Next' : 'See score';
   $('stamp').className = 'stamp' + (acc >= 95 ? ' show' : '');
   ui.card.className = 'pe show'; renderProgress(idx + 1);
 }
 function hideCard() { if (ui.card.classList.contains('show')) { ui.card.className = 'pe hide'; setTimeout(() => { if (ui.card.classList.contains('hide')) ui.card.className = 'pe gone'; }, 350); } }
 $('bNext').addEventListener('click', () => {
   if (state !== 'result') return;
+  if (practice) { openLevels(); return; }
   if (R.idx < DAILY.length - 1) startRound(R.idx + 1);
   else { hideCard(); state = 'done'; ui.results.classList.add('show'); openEnd(); }
 });
@@ -1895,7 +1951,7 @@ function boot() {
     R.guess = r.guess; R.acc = r.acc; beginFill(true);
     Object.assign(camS, R.view); camS.target = R.view.target.clone();
     applyCam(); unlockCam();
-    state = 'done'; ui.form.className = 'gone'; ui.qwrap.classList.add('away'); showChips(true); ui.results.classList.add('show');
+    state = 'done'; ui.form.className = 'gone'; ui.qwrap.classList.add('away'); ui.results.classList.add('show');
     openEnd(); return;
   }
   const go = () => startRound(done);
@@ -1915,12 +1971,27 @@ function renderHome() {
 }
 function showHome() {
   if (state === 'fill' || state === 'intro') return;
+  endPractice();
   renderHome(); homeEl.classList.remove('hidden'); try { $('heroVid').play().catch(() => {}); } catch (e) {}
 }
 function hideHome() { homeEl.classList.add('hidden'); try { $('heroVid').pause(); } catch (e) {} }
-$('hPlay').addEventListener('click', () => { ensureAudio(); hideHome(); if (!booted) { booted = true; boot(); } });
+$('hPlay').addEventListener('click', () => { ensureAudio(); hideHome(); endPractice(); if (!booted || needReboot) { booted = true; needReboot = false; hideCard(); boot(); } });
 $('hHelp').addEventListener('click', () => openModal('mHelp'));
-$('hHow').addEventListener('click', () => openModal('mHelp'));
+/* Levels: play any object as a practice round (not saved, doesn't touch today's game) */
+let practice = null, savedDaily = null, needReboot = false;
+function openLevels() {
+  $('lvlRows').innerHTML = OBJECTS.map(o => `<button class="row lvl" data-id="${o.id}"><span class="e">${DB.seen && DB.seen[o.id] != null ? emoji(DB.seen[o.id]) : '🍨'}</span><div class="nm"><b>${o.name}</b><span>${DB.seen && DB.seen[o.id] != null ? `best ${DB.seen[o.id]}%` : 'not played yet'}</span></div><span class="p">›</span></button>`).join('');
+  openModal('mLevels');
+}
+function startPractice(id) {
+  const o = OBJECTS.find(x => x.id === id); if (!o) return;
+  if (!practice) savedDaily = DAILY;
+  practice = { rounds: [] }; DAILY = [o]; needReboot = true; booted = true;
+  closeModal('mLevels'); hideHome(); hideCard(); ui.results.classList.remove('show'); startRound(0);
+}
+function endPractice() { if (!practice) return; practice = null; DAILY = savedDaily; }
+$('hLevels').addEventListener('click', () => { ensureAudio(); openLevels(); });
+document.getElementById('lvlRows').addEventListener('click', e => { const b = e.target.closest('.lvl'); if (b) startPractice(b.dataset.id); });
 $('hStats').addEventListener('click', openStats);
 $('hStreak').addEventListener('click', openStats);
 $('hSound').addEventListener('click', () => { ensureAudio(); setMuted(!muted); if (!muted) plop(1, .2); });
