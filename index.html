@@ -374,7 +374,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-22.2';
+window.SCOOPLE_BUILD = '2026-10-22.3';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1421,12 +1421,14 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const openDoor = () => { if (doorOpen || !ov || !ov.hole) return; doorOpen = true; leafOn = leaves.length > 0; hooks.doorOpened && hooks.doorOpened();
     if (sdfO) { sdf = sdfO; holeLive = true; holeBox.getCenter(holeC); wakeIn(holeBox);
       // the doorway band (a few balls deep inside the opening) and the exit speed that moves 1.2x the pour through it
-      bandBox.copy(holeBox).expandByVector(_hp.set(Math.abs(flowDir.x), Math.abs(flowDir.y), Math.abs(flowDir.z)).multiplyScalar(R0 * 3));
+      const ext = Math.abs(flowDir.x) * (b.maxX - b.minX) + Math.abs(flowDir.z) * (b.maxZ - b.minZ) + Math.abs(flowDir.y) * H;
+      bandDepth = Math.max(R0 * 3, ext * .3);   // pressure: strongest at the door, fading over the nearest third
+      bandBox.copy(holeBox).expandByVector(_hp.set(Math.abs(flowDir.x), Math.abs(flowDir.y), Math.abs(flowDir.z)).multiplyScalar(bandDepth));
       nearDoor.copy(bandBox).expandByScalar(R0 * 6); wakeIn(nearDoor);
       const sz = holeBox.getSize(new V3()), area = Math.max(1e-6, (Math.abs(flowDir.x) > .5 ? sz.y * sz.z : Math.abs(flowDir.z) > .5 ? sz.x * sz.y : sz.x * sz.z));
       vOut = clamp(pourRate * 1.2 * (4 / 3 * Math.PI * R0 ** 3 / .58) / area, Math.sqrt(g * R0) * .5, Math.sqrt(g * H) * 1.2); } };
   // the whole inside flows toward the opening, faster or slower so what pours out keeps pace with what pours in
-  let flowGain = 1, flowT = 0, flowLast = 0, pourRate = 1, vOut = 1, rateAvg = 0; const holeC = new V3(), bandBox = new THREE.Box3(), nearDoor = new THREE.Box3();
+  let flowGain = 1, flowT = 0, flowLast = 0, pourRate = 1, vOut = 1, rateAvg = 0, bandDepth = 1; const holeC = new V3(), bandBox = new THREE.Box3(), nearDoor = new THREE.Box3();
   const emitOut = () => {   // one spilled ball out of the door; it can start once the door is part-way open and there's space
     if (!ov || !ov.hole) return true;
     openDoor(); if (leaves.length && doorT < .35) return false;
@@ -1508,7 +1510,8 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       for (let i = 0; i < n; i++) { if (!awake[i] || free[i]) continue;
         qx[i] = px[i]; qy[i] = py[i]; qz[i] = pz[i]; vy[i] -= g * h;
         if (holeLive && inn[i] && bandBox.containsPoint(_hp.set(px[i], py[i], pz[i]))) {   // the pressure inside pushes whatever is at the doorway out, steadily
-          const vn = vx[i] * flowDir.x + vy[i] * flowDir.y + vz[i] * flowDir.z, want = vOut * flowGain;
+          const dd = (holeC.x - px[i]) * flowDir.x + (holeC.y - py[i]) * flowDir.y + (holeC.z - pz[i]) * flowDir.z;   // how far in from the door
+          const vn = vx[i] * flowDir.x + vy[i] * flowDir.y + vz[i] * flowDir.z, want = vOut * flowGain * clamp(1 - dd / bandDepth, .2, 1);
           if (vn < want) { const a = want - vn; vx[i] += flowDir.x * a; vy[i] += flowDir.y * a; vz[i] += flowDir.z * a; } }
         pm[i] = Math.hypot(vx[i], vy[i], vz[i]);
         let dx = vx[i] * h, dy = vy[i] * h, dz = vz[i] * h; const m = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
@@ -1707,7 +1710,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     if (phase === 'A') {
       if (quiet() || pt > PHASE_MAX - .3) { P.count = guess; queue.length = qi; wait.length = 0; holeLive = false;
         if (guess !== answer) hooks.correctionStart && hooks.correctionStart();
-        if (!isFull()) startB(); else afterB(); } }
+        if (!isFull() && !(sdfO && spaceLeft() < .06)) startB(); else afterB(); } }   // (after a spill it's already full: no late top-up)
     else if (phase === 'B') {
       if (sdfO && (remeasureT -= dt) <= 0) { remeasureT = .5; hmap.fill(b.y0); for (let i = 0; i < n; i++) if (alive[i] && inn[i] && !awake[i]) settle(i); }   // (after a spill the old pile heights are stale)
       if (!toppedUp && drained() && t - lastSpawnT > .5 && pt < bMax() - 1.7 && !isFull()) { toppedUp = true;   // one top-up at most (no stray sprinkles later)   // still not full: top it up, as much as the space left
