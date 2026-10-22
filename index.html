@@ -374,7 +374,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-22.4';
+window.SCOOPLE_BUILD = '2026-10-22.5';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1758,7 +1758,6 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     P.phase = phase === 'A' ? 'your' : 'real'; P.stage = phase;
     draw(dt);
   };
-  P.probe = () => { const o = []; for (let i = 0; i < n; i++) if (alive[i] && (px[i] < b.minX || py[i] > b.y1)) o.push([+px[i].toFixed(2), +py[i].toFixed(2), +pz[i].toFixed(2), inn[i], out[i], awake[i], inside(px[i], pz[i], py[i]) ? 1 : 0]); return { b, n: o.length, top: o.sort((p, q) => q[1] - p[1]).slice(0, 12) }; };
   P.stats = () => { let aw = 0, ins = 0, outF = 0, perched = 0, floating = 0, ovl = 0;
     rebuildHash();
     for (let i = 0; i < n; i++) { if (!alive[i]) continue;
