@@ -374,7 +374,7 @@ body.homeOpen #app,body.homeOpen #dimtags,body.homeOpen #scoopTag,body.homeOpen 
 <script>
 /* Build stamp: bump on every release. On launch we fetch the page fresh and reload once if a newer build is out,
    since GitHub Pages lets browsers keep a cached copy for a while. */
-window.SCOOPLE_BUILD = '2026-10-22.3';
+window.SCOOPLE_BUILD = '2026-10-22.4';
 (function () {
   try {
     if (sessionStorage.getItem('scoople:reloaded') === window.SCOOPLE_BUILD) return;
@@ -1287,7 +1287,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const qx = new Float32Array(CAP), qy = new Float32Array(CAP), qz = new Float32Array(CAP);   // previous positions
   const vx = new Float32Array(CAP), vy = new Float32Array(CAP), vz = new Float32Array(CAP);
   const scl = new Float32Array(CAP), still = new Float32Array(CAP), pm = new Float32Array(CAP);
-  const alive = new Uint8Array(CAP), awake = new Uint8Array(CAP), out = new Uint8Array(CAP), landed = new Uint8Array(CAP), inn = new Uint8Array(CAP), kicked = new Uint8Array(CAP), nud = new Uint8Array(CAP), guided = new Uint8Array(CAP);
+  const alive = new Uint8Array(CAP), awake = new Uint8Array(CAP), out = new Uint8Array(CAP), landed = new Uint8Array(CAP), inn = new Uint8Array(CAP), kicked = new Uint8Array(CAP), nud = new Uint8Array(CAP), guided = new Uint8Array(CAP), spl = new Uint8Array(CAP);
   const con = new Uint8Array(CAP), sup = new Uint8Array(CAP), cnx = new Float32Array(CAP), cny = new Float32Array(CAP), cnz = new Float32Array(CAP);
   // what each ball touches from below or the side (normals), to judge whether it can rest there
   const MC = 8, cN = new Float32Array(CAP * MC * 3), cK = new Uint8Array(CAP), cAw = new Uint16Array(CAP), cW = new Int8Array(CAP), flo = new Uint8Array(CAP);
@@ -1307,7 +1307,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
   const addBall = (x, y, z, vx0 = 0, vy0 = 0, vz0 = 0, sleeping = false) => {
     if (n >= CAP) return -1; const i = n++;
     px[i] = qx[i] = x; py[i] = qy[i] = y; pz[i] = qz[i] = z; vx[i] = vx0; vy[i] = vy0; vz[i] = vz0;
-    inn[i] = closed && inside(x, z, y) ? 1 : 0; kicked[i] = 0; nud[i] = 0; guided[i] = 0; scl[i] = sleeping ? 1 : .05; alive[i] = 1; awake[i] = sleeping ? 0 : 1; still[i] = 0; out[i] = 0; landed[i] = sleeping ? 1 : 0;
+    inn[i] = closed && inside(x, z, y) ? 1 : 0; kicked[i] = 0; nud[i] = 0; guided[i] = 0; spl[i] = 0; scl[i] = sleeping ? 1 : .05; alive[i] = 1; awake[i] = sleeping ? 0 : 1; still[i] = 0; out[i] = 0; landed[i] = sleeping ? 1 : 0;
     cols[i] = new THREE.Color(FLAVORS[pickFlavor(rng)]);
     quats[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rng() * 6.3, rng() * 6.3, rng() * 6.3));
     hashIn(i); return i;
@@ -1502,7 +1502,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
       free[i] = 0; maxV = Math.max(maxV, sp); if (py[i] > top) top = py[i]; }
     topAwake = top + R0;
     const lim = .5 * Math.min(R0, vs), ns = clamp(Math.ceil((maxV + g * dt) * dt / lim), 1, 8), h = dt / ns;
-    const damp = Math.exp(-7 * h), sdamp = Math.exp(-3 * h), maxStep = lim * 1.6, rr = 2 * R0, rr2 = rr * rr;
+    const damp = Math.exp(-7 * h), sdamp = Math.exp(-3 * h), sdampS = Math.exp(-2 * h), maxStep = lim * 1.6, rr = 2 * R0, rr2 = rr * rr;
     const thr = .25 * Math.sqrt(g * R0), nudV = .45 * Math.sqrt(g * R0);
     const lb = leafOn ? leafBB : null;
     for (let s = 0; s < ns; s++) {
@@ -1513,6 +1513,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
           const dd = (holeC.x - px[i]) * flowDir.x + (holeC.y - py[i]) * flowDir.y + (holeC.z - pz[i]) * flowDir.z;   // how far in from the door
           const vn = vx[i] * flowDir.x + vy[i] * flowDir.y + vz[i] * flowDir.z, want = vOut * flowGain * clamp(1 - dd / bandDepth, .2, 1);
           if (vn < want) { const a = want - vn; vx[i] += flowDir.x * a; vy[i] += flowDir.y * a; vz[i] += flowDir.z * a; } }
+        if (spl[i] && py[i] > R0 * 1.3 && phase === 'A') { const a = g * .25 * h; vx[i] += flowDir.x * a + (px[i] - holeC.x) * 0; vz[i] += flowDir.z * a; }   // spilled: it slides off the heap, away from the door
         pm[i] = Math.hypot(vx[i], vy[i], vz[i]);
         let dx = vx[i] * h, dy = vy[i] * h, dz = vz[i] * h; const m = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
         if (m > maxStep) { const f = maxStep / m; dx *= f; dy *= f; dz *= f; }
@@ -1554,7 +1555,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
           if (mouthOK(qx[i], qz[i])) { px[i] = qx[i]; pz[i] = qz[i]; } else if (guided[i] === 1) { px[i] += (cx - px[i]) * .2; pz[i] += (cz - pz[i]) * .2; }
           vx[i] = vz[i] = 0; con[i]++; }
         if (holeLive && inn[i] && holeBox.containsPoint(_hp.set(px[i], py[i], pz[i]))) {
-          if (!inside(px[i], pz[i], py[i])) { inn[i] = 0; spilled++; holeWake.push(i);
+          if (!inside(px[i], pz[i], py[i])) { inn[i] = 0; spl[i] = 1; spilled++; holeWake.push(i);
             const gv = Math.sqrt(g * H) * (.45 + rng() * .3); px[i] += flowDir.x * R0 * .3; pz[i] += flowDir.z * R0 * .3;
             qx[i] = px[i] - (flowDir.x * gv + (rng() - .5) * gv * .5) * h; qz[i] = pz[i] - (flowDir.z * gv + (rng() - .5) * gv * .5) * h; qy[i] = py[i] - (flowDir.y * gv) * h; if (spilled >= spillGoal) holeLive = false; } }
         if (closed && inside(px[i], pz[i], py[i]) !== !!inn[i]) {   // walls can't be crossed: keep whichever part of the move stays on its side (so it slides, never hangs)
@@ -1572,11 +1573,12 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
         if (con[i]) { const nl = Math.hypot(cnx[i], cny[i], cnz[i]);   // soft ice cream: hits soak up the rebound, rolling and sliding carry on
           if (nl > 1e-6) { const ux = cnx[i] / nl, uy = cny[i] / nl, uz = cnz[i] / nl, vn = vx[i] * ux + vy[i] * uy + vz[i] * uz;
             if (vn > 0) { vx[i] -= ux * vn * .9; vy[i] -= uy * vn * .9; vz[i] -= uz * vn * .9; } }
-          vx[i] *= damp; vz[i] *= damp; if (vy[i] > 0) vy[i] *= .3; }
+          if (spl[i]) { vx[i] *= sdampS; vz[i] *= sdampS; } else { vx[i] *= damp; vz[i] *= damp; } if (vy[i] > 0) vy[i] *= .3; }
         if (sup[i]) { vx[i] *= sdamp; vy[i] *= sdamp; vz[i] *= sdamp;
           if (!landed[i]) { landed[i] = 1; if (plopBudget > 0) { plopBudget--; plop(.75 + rng() * .5, .1); } } }
         if (py[i] < -D * .85) { alive[i] = 0; awake[i] = 0; dead++; continue; }
         if (!con[i] || vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] >= thr * thr) { still[i] = 0; continue; }
+        if (spl[i] && phase === 'A') { still[i] = 0; continue; }   // a spill keeps flowing until the pour stops
         still[i] += h; if (guided[i] === 1 && still[i] > .12 && py[i] < b.y1 + R0 * .6) guided[i] = 2;
         if (out[i] || still[i] < .15) continue;
         if (holeLive && inn[i] && nearDoor.containsPoint(_hp.set(px[i], py[i], pz[i]))) continue;   // (the balls by the door keep moving while it pours)
@@ -1756,6 +1758,7 @@ function makePour(model, answer, guess, objSize, objBox, rng, hooks) {
     P.phase = phase === 'A' ? 'your' : 'real'; P.stage = phase;
     draw(dt);
   };
+  P.probe = () => { const o = []; for (let i = 0; i < n; i++) if (alive[i] && (px[i] < b.minX || py[i] > b.y1)) o.push([+px[i].toFixed(2), +py[i].toFixed(2), +pz[i].toFixed(2), inn[i], out[i], awake[i], inside(px[i], pz[i], py[i]) ? 1 : 0]); return { b, n: o.length, top: o.sort((p, q) => q[1] - p[1]).slice(0, 12) }; };
   P.stats = () => { let aw = 0, ins = 0, outF = 0, perched = 0, floating = 0, ovl = 0;
     rebuildHash();
     for (let i = 0; i < n; i++) { if (!alive[i]) continue;
